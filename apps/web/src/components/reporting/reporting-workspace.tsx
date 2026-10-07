@@ -263,6 +263,7 @@ function Pagination({ page, totalPages, onPage }: { page: number; totalPages: nu
 }
 
 function statusTone(value: string): "neutral" | "success" | "warning" | "danger" | "info" {
+  if (/refunded/i.test(value)) return "danger";
   if (/paid|complete|approved|active|delivered|verified|settled|issued/i.test(value)) return "success";
   if (/fail|reject|cancel|expired|suspend/i.test(value)) return "danger";
   if (/pending|processing|review|eligible|open/i.test(value)) return "warning";

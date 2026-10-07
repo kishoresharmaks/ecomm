@@ -4,6 +4,8 @@ import {
   type PrismaClient,
 } from "./generated/prisma/client";
 
+export { ReportExportType };
+
 export type ReportExportFilters = {
   dateFrom?: string;
   dateTo?: string;
@@ -176,6 +178,9 @@ const definitions: Partial<Record<ReportExportType, ReportDefinition>> = {
       "Method",
       "Status",
       "Amount",
+      "Refund Status",
+      "Refund Amount",
+      "Net Amount",
       "Currency",
       "Provider Order ID",
       "Provider Payment ID",
@@ -455,6 +460,8 @@ const moneyHeaders = new Set([
   "MRP",
   "Sales",
   "Refunded Amount",
+  "Refund Amount",
+  "Net Amount",
   "Amount",
   "Collected Amount",
   "Seller Subtotal",
@@ -991,11 +998,26 @@ function adminEnquiriesQuery(filters: ReportExportFilters) {
 }
 
 function financePaymentsQuery(filters: ReportExportFilters) {
+  const isRefundedStatus =
+    filters.status === "REFUNDED" || filters.paymentStatus === "REFUNDED";
+  const isPaidStatus =
+    filters.status === "PAID" || filters.paymentStatus === "PAID";
+
   const conditions = [
     ...dateConditions("p.created_at", filters),
     ...(filters.provider ? [Prisma.sql`p.provider::text = ${filters.provider}`] : []),
-    ...(filters.paymentStatus ? [Prisma.sql`p.status::text = ${filters.paymentStatus}`] : []),
-    ...statusCondition("p.status", filters.status),
+    ...(isRefundedStatus
+      ? [
+          Prisma.sql`(p.status = 'REFUNDED' OR o.payment_status = 'REFUNDED' OR o.order_status = 'CANCELLED' OR ref.refund_status = 'SUCCESS')`,
+        ]
+      : isPaidStatus
+        ? [
+            Prisma.sql`p.status = 'PAID' AND o.order_status != 'CANCELLED' AND o.payment_status != 'REFUNDED' AND (ref.refund_status IS NULL OR ref.refund_status NOT IN ('SUCCESS', 'APPROVED'))`,
+          ]
+        : [
+            ...(filters.paymentStatus ? [Prisma.sql`p.status::text = ${filters.paymentStatus}`] : []),
+            ...statusCondition("p.status", filters.status),
+          ]),
     ...searchCondition(filters.search, [
       "o.order_number",
       "p.provider_payment_id",
@@ -1014,8 +1036,34 @@ function financePaymentsQuery(filters: ReportExportFilters) {
       p.created_at AS "Payment Date",
       p.provider::text AS "Provider",
       p.method AS "Method",
-      p.status::text AS "Status",
+      CASE
+        WHEN p.status = 'REFUNDED' OR o.payment_status = 'REFUNDED' OR ref.refund_status = 'SUCCESS' THEN 'REFUNDED'
+        WHEN o.order_status = 'CANCELLED' AND ref.refund_status = 'APPROVED' THEN 'REFUND_APPROVED'
+        WHEN o.order_status = 'CANCELLED' AND ref.refund_status IN ('PENDING_REVIEW', 'INITIATED', 'PROCESSING') THEN 'REFUND_PENDING'
+        WHEN o.order_status = 'CANCELLED' AND p.status = 'PAID' THEN 'REFUNDED'
+        WHEN ref.refund_status = 'APPROVED' THEN 'REFUND_APPROVED'
+        ELSE p.status::text
+      END AS "Status",
       (p.amount_paise) AS "Amount",
+      COALESCE(
+        ref.refund_status,
+        CASE
+          WHEN p.status = 'REFUNDED' OR o.payment_status = 'REFUNDED' OR o.order_status = 'CANCELLED' THEN 'SUCCESS'
+          ELSE NULL
+        END
+      ) AS "Refund Status",
+      CASE
+        WHEN COALESCE(ref.total_refund_paise, 0) > 0 THEN ref.total_refund_paise
+        WHEN p.status = 'REFUNDED' OR o.payment_status = 'REFUNDED' OR o.order_status = 'CANCELLED' THEN
+          GREATEST(0, o.total_paise - COALESCE(o.platform_fee_paise, 0) - COALESCE(o.shipping_paise, 0))
+        ELSE NULL
+      END AS "Refund Amount",
+      CASE
+        WHEN COALESCE(ref.total_refund_paise, 0) > 0 THEN GREATEST(0, p.amount_paise - ref.total_refund_paise)
+        WHEN p.status = 'REFUNDED' OR o.payment_status = 'REFUNDED' OR o.order_status = 'CANCELLED' THEN
+          LEAST(p.amount_paise, COALESCE(o.platform_fee_paise, 0) + COALESCE(o.shipping_paise, 0))
+        ELSE p.amount_paise
+      END AS "Net Amount",
       p.currency AS "Currency",
       p.provider_order_id AS "Provider Order ID",
       p.provider_payment_id AS "Provider Payment ID",
@@ -1023,12 +1071,22 @@ function financePaymentsQuery(filters: ReportExportFilters) {
       u.full_name AS "Customer Name",
       u.email AS "Customer Email",
       o.order_status::text AS "Order Status",
-      o.payment_status::text AS "Order Payment Status",
+      CASE
+        WHEN o.payment_status = 'REFUNDED' OR p.status = 'REFUNDED' OR ref.refund_status = 'SUCCESS' OR o.order_status = 'CANCELLED' THEN 'REFUNDED'
+        ELSE o.payment_status::text
+      END AS "Order Payment Status",
       (o.total_paise) AS "Order Total"
     FROM payments p
     JOIN orders o ON o.id = p.order_id
     JOIN customers c ON c.id = o.customer_id
     JOIN users u ON u.id = c.user_id
+    LEFT JOIN LATERAL (
+      SELECT
+        COALESCE(SUM(CASE WHEN rr.status != 'CANCELLED' THEN COALESCE(NULLIF(rr.approved_amount_paise, 0), rr.amount_paise) ELSE 0 END), 0)::int AS total_refund_paise,
+        (ARRAY_AGG(rr.status::text ORDER BY rr.created_at DESC))[1] AS refund_status
+      FROM refund_requests rr
+      WHERE rr.order_id = o.id
+    ) ref ON true
     ${whereSql(conditions)}
   `;
 }

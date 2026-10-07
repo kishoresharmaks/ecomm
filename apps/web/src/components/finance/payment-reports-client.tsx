@@ -64,6 +64,7 @@ export function PaymentReportsClient() {
             <option value="">All statuses</option>
             <option value="PENDING">Pending</option>
             <option value="PAID">Paid</option>
+            <option value="REFUNDED">Refunded</option>
             <option value="FAILED">Failed</option>
             <option value="NOT_REQUIRED">Not required</option>
           </select>
@@ -89,6 +90,7 @@ export function PaymentReportsClient() {
       <section className="grid gap-4 xl:grid-cols-2">
         <ReportPanel title="Payment method summary" items={reportsQuery.data?.byProvider ?? []} />
         <ReportPanel title="Payment status summary" items={reportsQuery.data?.byPaymentStatus ?? []} />
+        <ReportPanel title="Refund status summary" items={reportsQuery.data?.byRefundStatus ?? []} />
         <ReportPanel title="COD collection status" items={reportsQuery.data?.codByCollectionStatus ?? []} />
         <ReportPanel title="Order settlement status" items={reportsQuery.data?.bySettlementStatus ?? []} />
         <ReportPanel title="Service settlement status" items={reportsQuery.data?.byServiceSettlementStatus ?? []} />

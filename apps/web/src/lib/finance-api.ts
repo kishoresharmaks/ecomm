@@ -126,6 +126,7 @@ export type FinanceReportGroup = {
 export type FinancePaymentReports = {
   activityBasis: {
     payments: string;
+    refunds?: string;
     codCollections: string;
     orderSettlements: string;
     serviceSettlements: string;
@@ -134,6 +135,7 @@ export type FinancePaymentReports = {
   };
   byProvider: FinanceReportGroup[];
   byPaymentStatus: FinanceReportGroup[];
+  byRefundStatus?: FinanceReportGroup[];
   codByCollectionStatus: FinanceReportGroup[];
   bySettlementStatus: FinanceReportGroup[];
   byServiceSettlementStatus: FinanceReportGroup[];

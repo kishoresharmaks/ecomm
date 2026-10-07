@@ -424,9 +424,32 @@ export class FinancePaymentsService {
           ],
         }
       : {};
+    const refundWhere: Prisma.RefundRequestWhereInput = {
+      ...(dateRange ? { createdAt: dateRange } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { refundNumber: { contains: query.search.trim(), mode: "insensitive" } },
+              { order: { orderNumber: { contains: query.search.trim(), mode: "insensitive" } } },
+              {
+                customer: {
+                  user: {
+                    OR: [
+                      { email: { contains: query.search.trim(), mode: "insensitive" } },
+                      { fullName: { contains: query.search.trim(), mode: "insensitive" } },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
     const [
       byProvider,
-      byPaymentStatus,
+      paymentsForStatus,
+      byRefundStatus,
       codByCollectionStatus,
       bySettlementStatus,
       byServiceSettlementStatus,
@@ -442,9 +465,28 @@ export class FinancePaymentsService {
           _count: { _all: true },
           _sum: { amountPaise: true },
         }),
-        this.prisma.client.payment.groupBy({
-          by: ["status"],
+        this.prisma.client.payment.findMany({
           where,
+          select: {
+            id: true,
+            status: true,
+            amountPaise: true,
+            order: {
+              select: {
+                orderStatus: true,
+                paymentStatus: true,
+                sellerSplits: { select: { sellerStatus: true } },
+                refundRequests: {
+                  where: { status: { not: RefundRequestStatus.CANCELLED } },
+                  select: { status: true, amountPaise: true, approvedAmountPaise: true },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.client.refundRequest.groupBy({
+          by: ["status"],
+          where: refundWhere,
           _count: { _all: true },
           _sum: { amountPaise: true },
         }),
@@ -492,9 +534,43 @@ export class FinancePaymentsService {
         }),
       ]);
 
+    const paymentStatusMap = new Map<string, { count: number; amountPaise: number }>();
+    for (const payment of paymentsForStatus) {
+      const isOrderCancelled =
+        payment.order.orderStatus === OrderStatus.CANCELLED ||
+        payment.order.paymentStatus === PaymentStatus.REFUNDED ||
+        (payment.order.sellerSplits.length > 0 &&
+          payment.order.sellerSplits.every(
+            (s) => s.sellerStatus === SellerOrderStatus.CANCELLED,
+          ));
+      const hasSuccessfulRefund = payment.order.refundRequests.some(
+        (r) => r.status === RefundRequestStatus.SUCCESS,
+      );
+
+      let effectiveStatus: string = payment.status;
+      if (
+        payment.status === PaymentStatus.REFUNDED ||
+        payment.order.paymentStatus === PaymentStatus.REFUNDED ||
+        hasSuccessfulRefund ||
+        (isOrderCancelled && payment.status === PaymentStatus.PAID)
+      ) {
+        effectiveStatus = "REFUNDED";
+      }
+
+      const existing = paymentStatusMap.get(effectiveStatus) ?? { count: 0, amountPaise: 0 };
+      existing.count += 1;
+      existing.amountPaise += payment.amountPaise;
+      paymentStatusMap.set(effectiveStatus, existing);
+    }
+
+    const byPaymentStatus = Array.from(paymentStatusMap.entries()).map(([status, agg]) =>
+      this.groupMetric(status, agg.count, agg.amountPaise),
+    );
+
     return {
       activityBasis: {
         payments: "Payment created date",
+        refunds: "Refund request created date",
         codCollections: "Collection date, then order date",
         orderSettlements: "Settled, eligible, or created date",
         serviceSettlements: "Last settlement activity",
@@ -504,7 +580,8 @@ export class FinancePaymentsService {
       byProvider: byProvider.map((item) =>
         this.groupMetric(item.provider, item._count._all, item._sum.amountPaise),
       ),
-      byPaymentStatus: byPaymentStatus.map((item) =>
+      byPaymentStatus,
+      byRefundStatus: byRefundStatus.map((item) =>
         this.groupMetric(item.status, item._count._all, item._sum.amountPaise),
       ),
       codByCollectionStatus: codByCollectionStatus.map((item) =>
@@ -836,6 +913,7 @@ export class FinancePaymentsService {
             OR: [
               { status: PaymentStatus.REFUNDED },
               { order: { paymentStatus: PaymentStatus.REFUNDED } },
+              { order: { orderStatus: OrderStatus.CANCELLED } },
               {
                 order: {
                   refundRequests: {

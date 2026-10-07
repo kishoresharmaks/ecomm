@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { gstr1ReviewPeriod, reportExportDate } from "./report-exports";
+import {
+  gstr1ReviewPeriod,
+  reportExportDate,
+  reportExportHeaders,
+  ReportExportType,
+} from "./report-exports";
 
 describe("GSTR-1 review periods", () => {
   it("accepts a complete leap-year February using India timezone boundaries", () => {
@@ -54,3 +59,15 @@ describe("queued report date boundaries", () => {
     ).toBe("2026-07-22T15:30:00.000Z");
   });
 });
+
+describe("FINANCE_PAYMENTS export schema", () => {
+  it("includes Refund Status, Refund Amount, and Net Amount headers", () => {
+    const headers = reportExportHeaders(ReportExportType.FINANCE_PAYMENTS);
+    expect(headers).toContain("Refund Status");
+    expect(headers).toContain("Refund Amount");
+    expect(headers).toContain("Net Amount");
+    expect(headers).toContain("Status");
+    expect(headers).toContain("Amount");
+  });
+});
+
