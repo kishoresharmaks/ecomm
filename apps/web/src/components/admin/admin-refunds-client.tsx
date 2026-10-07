@@ -307,7 +307,7 @@ export function AdminRefundsClient() {
 
             <div className="mt-4 divide-y divide-[#FDE68A] overflow-hidden rounded-lg border border-[#FDE68A] bg-white">
               {unrefundedOrders.map((item) => {
-                const refundAmount = item.pendingRefundPaise || item.eligibleRefundPaise || item.totalPaise;
+                const refundAmount = item.pendingRefundPaise ?? item.eligibleRefundPaise ?? 0;
                 return (
                   <div key={item.orderNumber} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">

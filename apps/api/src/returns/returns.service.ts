@@ -971,7 +971,8 @@ export class ReturnsService {
 
     const cancelledQuantity = cancellationLines.reduce((sum, line) => sum + line.quantity, 0);
     const cancelledGrossPaise = cancellationLines.reduce((sum, line) => sum + line.grossPaise, 0);
-    let buyerRefundPaise = cancellationLines.reduce(
+    // Exclude platform fee and shipping fee — refund strictly the product line amounts
+    const buyerRefundPaise = cancellationLines.reduce(
       (sum, line) => sum + line.buyerRefundPaise,
       0,
     );
@@ -980,10 +981,6 @@ export class ReturnsService {
     const allItemsCancelled = cancelledQuantity >= allActiveBefore;
     const paidCancellation = order.paymentStatus === PaymentStatus.PAID;
     const note = input.note?.trim() || "Seller cancelled package / unfulfilled order split.";
-
-    if (allItemsCancelled && paidCancellation) {
-      buyerRefundPaise += order.shippingPaise + order.platformFeePaise;
-    }
 
     for (const line of cancellationLines) {
       await tx.orderItem.update({
@@ -2433,20 +2430,20 @@ export class ReturnsService {
           (item) => item.activeQuantity === 0 || item.cancelledQuantity >= item.quantity,
         );
 
-      const eligibleRefundPaise = allItemsCancelled
-        ? paidPaise
-        : order.items.reduce((sum, item) => {
-          const cancelledQty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
-          if (cancelledQty <= 0) return sum;
-          const gross = item.unitPricePaise * cancelledQty;
-          const couponAdj = prorateAllocatedPaise({
-            totalAllocationPaise: item.couponDiscountPaise,
-            originalQuantity: item.quantity,
-            affectedQuantity: cancelledQty,
-            alreadyAffectedQuantity: 0,
-          });
-          return sum + buyerRefundAmountForLine({ grossAmountPaise: gross, couponAdjustmentPaise: couponAdj });
-        }, 0);
+      // Strictly refund product amounts (item unit price * qty - coupons), excluding platform & shipping fees
+      const eligibleProductRefundPaise = order.items.reduce((sum, item) => {
+        const cancelledQty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
+        if (cancelledQty <= 0) return sum;
+        const gross = item.unitPricePaise * cancelledQty;
+        const couponAdj = prorateAllocatedPaise({
+          totalAllocationPaise: item.couponDiscountPaise,
+          originalQuantity: item.quantity,
+          affectedQuantity: cancelledQty,
+          alreadyAffectedQuantity: 0,
+        });
+        return sum + buyerRefundAmountForLine({ grossAmountPaise: gross, couponAdjustmentPaise: couponAdj });
+      }, 0);
+      const eligibleRefundPaise = Math.min(paidPaise, eligibleProductRefundPaise);
 
       const existingRefundedPaise = order.refundRequests.reduce(
         (sum, req) => sum + req.amountPaise,
@@ -2549,20 +2546,20 @@ export class ReturnsService {
       order.orderStatus === OrderStatus.CANCELLED ||
       order.items.every((i) => i.activeQuantity === 0 || i.cancelledQuantity >= i.quantity);
 
-    const eligibleRefundPaise = allItemsCancelled
-      ? paidPaise
-      : order.items.reduce((sum, item) => {
-        const cancelledQty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
-        if (cancelledQty <= 0) return sum;
-        const gross = item.unitPricePaise * cancelledQty;
-        const couponAdj = prorateAllocatedPaise({
-          totalAllocationPaise: item.couponDiscountPaise,
-          originalQuantity: item.quantity,
-          affectedQuantity: cancelledQty,
-          alreadyAffectedQuantity: 0,
-        });
-        return sum + buyerRefundAmountForLine({ grossAmountPaise: gross, couponAdjustmentPaise: couponAdj });
-      }, 0);
+    // Strictly refund product amounts (item unit price * qty - coupons), excluding platform & shipping fees
+    const eligibleProductRefundPaise = order.items.reduce((sum, item) => {
+      const cancelledQty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
+      if (cancelledQty <= 0) return sum;
+      const gross = item.unitPricePaise * cancelledQty;
+      const couponAdj = prorateAllocatedPaise({
+        totalAllocationPaise: item.couponDiscountPaise,
+        originalQuantity: item.quantity,
+        affectedQuantity: cancelledQty,
+        alreadyAffectedQuantity: 0,
+      });
+      return sum + buyerRefundAmountForLine({ grossAmountPaise: gross, couponAdjustmentPaise: couponAdj });
+    }, 0);
+    const eligibleRefundPaise = Math.min(paidPaise, eligibleProductRefundPaise);
 
     const existingRefundedPaise = order.refundRequests.reduce((sum, req) => sum + req.amountPaise, 0);
     const pendingRefundPaise = Math.max(0, eligibleRefundPaise - existingRefundedPaise);

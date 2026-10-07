@@ -350,7 +350,7 @@ describe("ReturnsService return policy helpers", () => {
     });
 
     expect(result.cancelledQuantity).toBe(2);
-    expect(result.buyerRefundPaise).toBe(3000 + 5000 + 200); // Items + shipping + platform fee
+    expect(result.buyerRefundPaise).toBe(3000); // Product items only, platform & shipping fees excluded
     expect(result.canAutoInitiateRazorpay).toBe(true);
     expect(result.allItemsCancelled).toBe(true);
     expect(result.refundNumber).toBe("REF-20261006-0001");
@@ -388,7 +388,7 @@ describe("ReturnsService return policy helpers", () => {
         paymentId: "pay_1",
         status: "APPROVED",
         reason: "SELLER_NON_FULFILMENT",
-        amountPaise: 8200,
+        amountPaise: 3000,
       }),
     });
   });
@@ -512,6 +512,13 @@ describe("ReturnsService historical cancelled orders reconciliation", () => {
       customer: { user: { id: "u1111111-1111-1111-1111-111111111111" } },
     };
 
+    const refundRequestCreateMock = vi.fn().mockResolvedValue({
+      id: "ref_new_1",
+      refundNumber: "REF-REC-001",
+      status: "APPROVED",
+      amountPaise: 5000,
+    });
+
     const mockPrisma = {
       client: {
         order: {
@@ -530,12 +537,7 @@ describe("ReturnsService historical cancelled orders reconciliation", () => {
             },
             refundRequest: {
               findUnique: vi.fn().mockResolvedValue(null),
-              create: vi.fn().mockResolvedValue({
-                id: "ref_new_1",
-                refundNumber: "REF-REC-001",
-                status: "APPROVED",
-                amountPaise: 5500,
-              }),
+              create: refundRequestCreateMock,
             },
             orderSellerSplit: { update: vi.fn().mockResolvedValue({}) },
             auditLog: { create: vi.fn().mockResolvedValue({}) },
@@ -569,5 +571,14 @@ describe("ReturnsService historical cancelled orders reconciliation", () => {
     expect(result.refundNumber).toMatch(/^1HI-RFD-/);
     expect(result.reconciled).toBe(true);
     expect(result.initiated).toBe(true);
+    // Verifies shippingPaise (400) and platformFeePaise (100) are excluded; only product amount (5000) is refunded
+    expect(refundRequestCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amountPaise: 5000,
+          approvedAmountPaise: 5000,
+        }),
+      }),
+    );
   });
 });
