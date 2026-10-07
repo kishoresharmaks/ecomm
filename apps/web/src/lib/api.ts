@@ -75,6 +75,75 @@ export async function indihubFetch<T>(path: string, init?: RequestInit, auth?: I
   return decryptResponseBody<T>(body, result.bearerToken);
 }
 
+export type IndihubBlobResult = {
+  blob: Blob;
+  fileName?: string | undefined;
+  contentType?: string | undefined;
+  response: Response;
+};
+
+export async function indihubFetchBlob(
+  path: string,
+  init?: RequestInit,
+  auth?: IndihubAuthHeaders,
+): Promise<IndihubBlobResult> {
+  const isGetWithoutBody = !init?.body && (!init?.method || init.method.toUpperCase() === "GET");
+  const blobInit: RequestInit = {
+    ...init,
+    headers: {
+      ...(isGetWithoutBody ? {} : { "Content-Type": "application/json" }),
+      ...init?.headers,
+    },
+  };
+
+  let result = await request(path, blobInit, auth, { skipCache: false });
+  let response = result.response;
+
+  if (response.status === 401 && auth?.getBearerToken) {
+    result = await request(path, blobInit, auth, { skipCache: true });
+    response = result.response;
+  }
+
+  if (!response.ok) {
+    const details = await readErrorDetails(response);
+    const error = new IndihubApiError(errorMessage(details, response.status), response.status, details);
+    if (response.status === 401) {
+      auth?.onUnauthorized?.(error);
+    }
+    throw error;
+  }
+
+  const contentDisposition = response.headers.get("content-disposition") ?? "";
+  const fileNameMatch = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(contentDisposition);
+  const fileName = fileNameMatch?.[1] ? decodeURIComponent(fileNameMatch[1].trim()) : undefined;
+  const contentType = response.headers.get("content-type") ?? undefined;
+  const blob = await response.blob();
+
+  return { blob, fileName, contentType, response };
+}
+
+export async function downloadAuthenticatedBlob(
+  path: string,
+  fallbackFileName: string,
+  auth?: IndihubAuthHeaders,
+  init?: RequestInit,
+): Promise<{ fileName: string; size: number }> {
+  const { blob, fileName } = await indihubFetchBlob(path, init, auth);
+  const finalFileName = fileName || fallbackFileName;
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = finalFileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+  return { fileName: finalFileName, size: blob.size };
+}
+
 export function userFacingApiErrorMessage(error: unknown) {
   if (error instanceof IndihubApiError) {
     return error.message;
@@ -135,7 +204,13 @@ async function request(path: string, init: RequestInit | undefined, auth: Indihu
     const requestInit: RequestInit = {
       ...init,
       headers,
-      credentials: init?.credentials ?? (bearerToken === adminCookieSessionMarker ? "include" : "same-origin"),
+      credentials:
+        init?.credentials ??
+        (bearerToken === adminCookieSessionMarker ||
+        path.startsWith("/api/admin/") ||
+        path.startsWith("/api/finance/")
+          ? "include"
+          : "same-origin"),
       ...(init?.signal || controller?.signal ? { signal: init?.signal ?? controller?.signal ?? null } : {})
     };
     const response = await fetch(`${apiBaseUrl}${path}`, requestInit);

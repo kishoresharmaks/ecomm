@@ -2,6 +2,7 @@ import { AlertCircle, Inbox, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button, StatusBadge, type StatusTone, cn } from "@indihub/ui";
 import { IndihubApiError } from "@/lib/api";
+import { statusTone } from "@/components/admin/admin-order-utils";
 
 export function B2BMetric({
   label,
@@ -156,51 +157,7 @@ export function humanize(value?: string | null): string {
   return value.replace(/[._]/g, " ").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export function statusTone(status?: string | null): StatusTone {
-  const normalized = status ?? "";
-  if (
-    [
-      "ACTIVE",
-      "APPROVED",
-      "PAID",
-      "DELIVERED",
-      "SENT",
-      "COMPLETED",
-      "PUBLISHED",
-      "RESPONDED",
-      "BUYER_CONFIRMED",
-      "ADMIN_APPROVED",
-      "FINALISED",
-      "CLOSED",
-    ].includes(normalized)
-  ) {
-    return "success";
-  }
-  if (normalized === "NEGOTIATING") {
-    return "info";
-  }
-  if (
-    [
-      "PENDING",
-      "SUBMITTED",
-      "IN_REVIEW",
-      "PENDING_APPROVAL",
-      "PLACED",
-      "PROCESSING",
-      "DRAFT",
-      "SKIPPED",
-      "OPEN",
-    ].includes(normalized)
-  ) {
-    return "warning";
-  }
-  if (
-    ["REJECTED", "SUSPENDED", "DISABLED", "FAILED", "CANCELLED", "ARCHIVED"].includes(normalized)
-  ) {
-    return "danger";
-  }
-  return "info";
-}
+export { statusTone };
 
 export function transportLabel(value?: string | null) {
   if (value === "STORE_PICKUP") {

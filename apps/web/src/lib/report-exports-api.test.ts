@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { adminCookieSessionMarker } from "./api";
 import {
   createReportExport,
+  downloadReportExport,
   gstr1ReviewMonthRange,
   gstr1ReviewQuarterRange,
   reportPresetRange,
@@ -111,5 +113,53 @@ describe("report export web helpers", () => {
       dateFrom: "2026-07-01",
       dateTo: "2026-07-31",
     });
+  });
+
+  it("downloads finance report exports with credentials: include for back-office sessions", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new Blob(["payment_id,order_number,amount\npay_1,ord_1,500"]), {
+        status: 200,
+        headers: {
+          "content-disposition": 'attachment; filename="1handindia-finance-payments.csv"',
+          "content-type": "text/csv",
+        },
+      }),
+    );
+    const click = vi.fn();
+    const remove = vi.fn();
+    const appendChild = vi.fn();
+    const anchor = { href: "", download: "", click, remove };
+    vi.stubGlobal("document", {
+      createElement: vi.fn().mockReturnValue(anchor),
+      body: { appendChild },
+    });
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:finance-export");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    try {
+      await downloadReportExport(
+        { bearerToken: adminCookieSessionMarker },
+        "finance",
+        { id: "export-job-789", fileName: "1handindia-finance-payments.csv" },
+      );
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const callUrl = String(fetchMock.mock.calls[0]?.[0]);
+      expect(callUrl).toContain("/api/admin/finance/report-exports/export-job-789/download");
+
+      const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      expect(requestInit.credentials).toBe("include");
+      expect(new Headers(requestInit.headers).get("authorization")).toBeNull();
+      expect(anchor.download).toBe("1handindia-finance-payments.csv");
+      expect(anchor.href).toBe("blob:finance-export");
+      expect(click).toHaveBeenCalledOnce();
+      expect(remove).toHaveBeenCalledOnce();
+      expect(createObjectURL).toHaveBeenCalledOnce();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:finance-export");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

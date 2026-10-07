@@ -74,7 +74,11 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function restoreSession() {
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/admin")) {
+      const isBackOfficePath =
+        window.location.pathname.startsWith("/admin") ||
+        window.location.pathname.startsWith("/finance") ||
+        window.location.pathname.startsWith("/courier");
+      if (typeof window !== "undefined" && !isBackOfficePath) {
         setIsReady(true);
         return;
       }

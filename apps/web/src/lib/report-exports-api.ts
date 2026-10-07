@@ -1,6 +1,7 @@
 import {
   apiBaseUrl,
   buildAuthHeaders,
+  downloadAuthenticatedBlob,
   indihubFetch,
   type IndihubAuthHeaders,
 } from "./api";
@@ -238,26 +239,11 @@ export async function downloadReportExport(
   job: Pick<ReportExportJob, "id" | "fileName">,
 ) {
   const path = `${exportBase[audience]}/${encodeURIComponent(job.id)}/download`;
-  let response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: await buildAuthHeaders(auth),
-  });
-  if (response.status === 401 && auth.getBearerToken) {
-    response = await fetch(`${apiBaseUrl}${path}`, {
-      headers: await buildAuthHeaders(auth, { skipCache: true }),
-    });
-  }
-  if (!response.ok) {
-    throw new Error("Unable to download this report export.");
-  }
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = job.fileName || "1handindia-report.csv";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  return downloadAuthenticatedBlob(
+    path,
+    job.fileName || "1handindia-report.csv",
+    auth,
+  );
 }
 
 function localDate(date: Date) {

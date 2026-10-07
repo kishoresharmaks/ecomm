@@ -1678,33 +1678,60 @@ export class OrdersService {
   }
 
   async getAdminOrderSummary() {
-    const [totalOrders, pendingOrders, completedOrders, inDeliveryOrders, cancelledOrders] =
-      await Promise.all([
-        this.prisma.client.order.count(),
-        this.prisma.client.order.count({
-          where: {
-            orderStatus: { in: [OrderStatus.PLACED, OrderStatus.CONFIRMED] },
+    const [
+      totalOrders,
+      pendingOrders,
+      completedOrders,
+      inDeliveryOrders,
+      cancelledOrders,
+      refundedOrders,
+    ] = await Promise.all([
+      this.prisma.client.order.count(),
+      this.prisma.client.order.count({
+        where: {
+          orderStatus: { in: [OrderStatus.PLACED, OrderStatus.CONFIRMED] },
+        },
+      }),
+      this.prisma.client.order.count({
+        where: {
+          orderStatus: OrderStatus.DELIVERED,
+        },
+      }),
+      this.prisma.client.order.count({
+        where: {
+          orderStatus: { notIn: [OrderStatus.CANCELLED, OrderStatus.DELIVERED] },
+          deliveryStatus: {
+            in: [DeliveryStatus.PACKED, DeliveryStatus.DISPATCHED, DeliveryStatus.IN_TRANSIT],
           },
-        }),
-        this.prisma.client.order.count({
-          where: {
-            orderStatus: OrderStatus.DELIVERED,
-          },
-        }),
-        this.prisma.client.order.count({
-          where: {
-            orderStatus: { notIn: [OrderStatus.CANCELLED, OrderStatus.DELIVERED] },
-            deliveryStatus: {
-              in: [DeliveryStatus.PACKED, DeliveryStatus.DISPATCHED, DeliveryStatus.IN_TRANSIT],
+        },
+      }),
+      this.prisma.client.order.count({
+        where: {
+          orderStatus: OrderStatus.CANCELLED,
+        },
+      }),
+      this.prisma.client.order.count({
+        where: {
+          OR: [
+            { paymentStatus: PaymentStatus.REFUNDED },
+            { payments: { some: { status: PaymentStatus.REFUNDED } } },
+            {
+              refundRequests: {
+                some: {
+                  status: {
+                    in: [
+                      RefundRequestStatus.SUCCESS,
+                      RefundRequestStatus.APPROVED,
+                      RefundRequestStatus.PROCESSING,
+                    ],
+                  },
+                },
+              },
             },
-          },
-        }),
-        this.prisma.client.order.count({
-          where: {
-            orderStatus: OrderStatus.CANCELLED,
-          },
-        }),
-      ]);
+          ],
+        },
+      }),
+    ]);
 
     return {
       totalOrders,
@@ -1712,6 +1739,7 @@ export class OrdersService {
       completedOrders,
       inDeliveryOrders,
       cancelledOrders,
+      refundedOrders,
       generatedAt: new Date().toISOString(),
     };
   }
@@ -3277,7 +3305,9 @@ export class OrdersService {
       dto.paymentStatus ??
       (isCancellingOrder && existing.paymentStatus === PaymentStatus.PENDING
         ? PaymentStatus.NOT_REQUIRED
-        : undefined);
+        : isCancellingOrder && existing.paymentStatus === PaymentStatus.PAID
+          ? PaymentStatus.REFUNDED
+          : undefined);
     const nextOrderStatus = dto.orderStatus ?? existing.orderStatus;
     const nextPaymentStatus = paymentStatusToApply ?? existing.paymentStatus;
 
@@ -3319,7 +3349,13 @@ export class OrdersService {
         const paymentsToUpdate =
           paymentStatusToApply === PaymentStatus.NOT_REQUIRED
             ? existing.payments.filter((payment) => payment.status === PaymentStatus.PENDING)
-            : existing.payments.slice(0, 1);
+            : paymentStatusToApply === PaymentStatus.REFUNDED
+              ? existing.payments.filter(
+                  (payment) =>
+                    payment.status === PaymentStatus.PAID ||
+                    payment.status === PaymentStatus.PENDING,
+                )
+              : existing.payments.slice(0, 1);
         for (const payment of paymentsToUpdate) {
           await tx.payment.update({
             where: { id: payment.id },
@@ -3400,9 +3436,10 @@ export class OrdersService {
         }
 
         await tx.orderSellerSplit.updateMany({
-          where: { orderId: existing.id },
+          where: { orderId: existing.id, payoutId: null },
           data: {
             sellerStatus: SellerOrderStatus.CANCELLED,
+            settlementStatus: SellerSettlementStatus.CANCELLED,
           },
         });
         await this.taxDocuments.cancelDraftOrderDocuments(
@@ -8027,9 +8064,33 @@ export class OrdersService {
       "paymentMethod",
     );
 
+    const paymentStatusCondition: Prisma.OrderWhereInput | undefined = paymentStatus?.length
+      ? paymentStatus.includes(PaymentStatus.REFUNDED)
+        ? {
+            OR: [
+              { paymentStatus: { in: paymentStatus } },
+              { payments: { some: { status: PaymentStatus.REFUNDED } } },
+              {
+                refundRequests: {
+                  some: {
+                    status: {
+                      in: [
+                        RefundRequestStatus.SUCCESS,
+                        RefundRequestStatus.APPROVED,
+                        RefundRequestStatus.PROCESSING,
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : { paymentStatus: { in: paymentStatus } }
+      : undefined;
+
     return {
       ...(orderStatus?.length ? { orderStatus: { in: orderStatus } } : {}),
-      ...(paymentStatus?.length ? { paymentStatus: { in: paymentStatus } } : {}),
+      ...(paymentStatusCondition ?? {}),
       ...(deliveryStatus?.length ? { deliveryStatus: { in: deliveryStatus } } : {}),
       ...(paymentMethod?.length ? { payments: { some: { method: { in: paymentMethod } } } } : {}),
       ...(query.search

@@ -1,4 +1,4 @@
-import { IndihubApiError, apiBaseUrl, buildAuthHeaders, indihubFetch, type IndihubAuthHeaders } from "./api";
+import { IndihubApiError, apiBaseUrl, buildAuthHeaders, indihubFetch, indihubFetchBlob, type IndihubAuthHeaders } from "./api";
 import type { AccountOrder } from "./account-api";
 import type { B2BFinalDocumentType } from "./business-buyer-api";
 import {
@@ -1079,18 +1079,10 @@ export async function fetchSellerPackageLabel(
   auth: IndihubAuthHeaders,
   labelDownloadUrl: string,
 ) {
-  const response = await fetch(`${apiBaseUrl}${labelDownloadUrl}`, {
-    headers: await buildAuthHeaders(auth),
-  });
-  if (!response.ok) {
-    throw new IndihubApiError("Courier label could not be downloaded.", response.status);
-  }
-  const contentDisposition = response.headers.get("content-disposition") ?? "";
-  const fileNameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition);
-
+  const { blob, fileName } = await indihubFetchBlob(labelDownloadUrl, undefined, auth);
   return {
-    blob: await response.blob(),
-    fileName: fileNameMatch?.[1] ?? "courier-label.pdf",
+    blob,
+    fileName: fileName ?? "courier-label.pdf",
   };
 }
 

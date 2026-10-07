@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   adminCookieSessionMarker,
+  downloadAuthenticatedBlob,
   IndihubApiError,
   indihubFetch,
+  indihubFetchBlob,
   requestTimedOutMessage,
   userFacingApiErrorMessage,
   userSessionExpiredMessage,
@@ -148,6 +150,74 @@ describe("indihubFetch", () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.credentials).toBe("include");
     expect(new Headers(init.headers).get("authorization")).toBeNull();
+  });
+
+  it("fetches blobs with credentials: include for back-office admin sessions", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new Blob(["order_id,amount\n1,100"]), {
+        status: 200,
+        headers: {
+          "content-disposition": 'attachment; filename="orders-report.csv"',
+          "content-type": "text/csv",
+        },
+      }),
+    );
+
+    const result = await indihubFetchBlob(
+      "/api/admin/finance/report-exports/job-123/download",
+      undefined,
+      { bearerToken: adminCookieSessionMarker },
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.credentials).toBe("include");
+    expect(new Headers(init.headers).get("authorization")).toBeNull();
+    expect(result.fileName).toBe("orders-report.csv");
+    expect(result.contentType).toBe("text/csv");
+    expect(await result.blob.text()).toBe("order_id,amount\n1,100");
+  });
+
+  it("downloads authenticated blobs programmatically and triggers file download", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new Blob(["test-content"]), {
+        status: 200,
+        headers: {
+          "content-disposition": 'attachment; filename="custom-export.csv"',
+          "content-type": "text/csv",
+        },
+      }),
+    );
+    const click = vi.fn();
+    const remove = vi.fn();
+    const appendChild = vi.fn();
+    const anchor = { href: "", download: "", click, remove };
+    vi.stubGlobal("document", {
+      createElement: vi.fn().mockReturnValue(anchor),
+      body: { appendChild },
+    });
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:download-url");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    try {
+      const result = await downloadAuthenticatedBlob(
+        "/api/admin/finance/report-exports/job-456/download",
+        "fallback.csv",
+        { bearerToken: adminCookieSessionMarker },
+      );
+
+      expect(result.fileName).toBe("custom-export.csv");
+      expect(anchor.download).toBe("custom-export.csv");
+      expect(anchor.href).toBe("blob:download-url");
+      expect(appendChild).toHaveBeenCalledWith(anchor);
+      expect(click).toHaveBeenCalledOnce();
+      expect(remove).toHaveBeenCalledOnce();
+      expect(createObjectURL).toHaveBeenCalledOnce();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:download-url");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

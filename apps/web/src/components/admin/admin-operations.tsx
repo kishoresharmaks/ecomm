@@ -101,6 +101,7 @@ import {
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
 import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { SellerImageUpload } from "@/components/seller/seller-ui";
+import { getEffectivePaymentStatus } from "@/components/admin/admin-order-utils";
 import { statusTone } from "@/components/b2b/b2b-ui";
 import {
   apiBaseUrl,
@@ -495,6 +496,16 @@ type OrderRecord = {
     note?: string | null;
     createdAt?: string;
   }>;
+  refundRequests?: Array<{
+    id: string;
+    refundNumber?: string;
+    status: string;
+    reason?: string;
+    amountPaise?: number;
+    approvedAmountPaise?: number | null;
+    createdAt?: string;
+    items?: unknown[];
+  }>;
 };
 
 type AdminOrderSummaryRecord = {
@@ -503,6 +514,7 @@ type AdminOrderSummaryRecord = {
   completedOrders: number;
   inDeliveryOrders: number;
   cancelledOrders: number;
+  refundedOrders?: number;
   generatedAt?: string;
 };
 
@@ -2557,7 +2569,7 @@ function AdminOrdersBoard({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <AdminOrderMetricCard
           label="Total orders"
           value={summaryCount(summary?.totalOrders, total, summaryLoading)}
@@ -2576,15 +2588,6 @@ function AdminOrdersBoard({
           onSelect={() => setActiveTab("PENDING")}
         />
         <AdminOrderMetricCard
-          label="Completed"
-          value={summaryCount(summary?.completedOrders, null, summaryLoading)}
-          detail={summaryPercent(summary?.completedOrders, summary?.totalOrders)}
-          tone="success"
-          icon={<CheckCircle2 className="h-5 w-5" aria-hidden="true" />}
-          active={activeTab === "DELIVERED"}
-          onSelect={() => setActiveTab("DELIVERED")}
-        />
-        <AdminOrderMetricCard
           label="In delivery"
           value={summaryCount(summary?.inDeliveryOrders, null, summaryLoading)}
           detail={summaryPercent(summary?.inDeliveryOrders, summary?.totalOrders)}
@@ -2594,6 +2597,15 @@ function AdminOrdersBoard({
           onSelect={() => setActiveTab("PACKED")}
         />
         <AdminOrderMetricCard
+          label="Completed"
+          value={summaryCount(summary?.completedOrders, null, summaryLoading)}
+          detail={summaryPercent(summary?.completedOrders, summary?.totalOrders)}
+          tone="success"
+          icon={<CheckCircle2 className="h-5 w-5" aria-hidden="true" />}
+          active={activeTab === "DELIVERED"}
+          onSelect={() => setActiveTab("DELIVERED")}
+        />
+        <AdminOrderMetricCard
           label="Cancelled"
           value={summaryCount(summary?.cancelledOrders, null, summaryLoading)}
           detail={summaryPercent(summary?.cancelledOrders, summary?.totalOrders)}
@@ -2601,6 +2613,15 @@ function AdminOrdersBoard({
           icon={<XCircle className="h-5 w-5" aria-hidden="true" />}
           active={activeTab === "CANCELLED"}
           onSelect={() => setActiveTab("CANCELLED")}
+        />
+        <AdminOrderMetricCard
+          label="Refunded"
+          value={summaryCount(summary?.refundedOrders, null, summaryLoading)}
+          detail={summaryPercent(summary?.refundedOrders, summary?.totalOrders)}
+          tone="danger"
+          icon={<ShieldAlert className="h-5 w-5" aria-hidden="true" />}
+          active={activeTab === "REFUNDED"}
+          onSelect={() => setActiveTab("REFUNDED")}
         />
       </div>
 
@@ -2638,27 +2659,30 @@ function AdminOrdersBoard({
           </Button>
         </div>
 
-        <div className="hidden overflow-x-auto 2xl:block">
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full table-fixed text-left">
             <thead className="bg-[#F8FAFC]">
               <tr className="border-b border-[#E5E7EB] text-xs font-black uppercase tracking-wide text-[#344054]">
-                <th className="w-[17%] px-5 py-4">Order</th>
-                <th className="w-[43%] px-5 py-4">Status and progress</th>
-                <th className="w-[13%] px-5 py-4">Amount</th>
-                <th className="w-[17%] px-5 py-4">Items and details</th>
-                <th className="w-[10%] px-5 py-4 text-right">Action</th>
+                <th className="w-[16%] px-4 py-3.5">Order</th>
+                <th className="w-[16%] px-4 py-3.5">Customer</th>
+                <th className="w-[18%] px-4 py-3.5">Items & Seller</th>
+                <th className="w-[11%] px-4 py-3.5">Order Status</th>
+                <th className="w-[12%] px-4 py-3.5">Payment</th>
+                <th className="w-[11%] px-4 py-3.5">Delivery</th>
+                <th className="w-[12%] px-4 py-3.5">Amount</th>
+                <th className="w-[4%] px-4 py-3.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5E7EB]">
               {orders.map((order) => (
                 <AdminOrderTableRow key={order.id} order={order} />
               ))}
-              <AdminOrdersEmptyState isLoading={isLoading} isEmpty={!orders.length} colSpan={5} />
+              <AdminOrdersEmptyState isLoading={isLoading} isEmpty={!orders.length} colSpan={8} />
             </tbody>
           </table>
         </div>
 
-        <div className="space-y-3 bg-[#F8FAFC] p-3 2xl:hidden">
+        <div className="space-y-3 bg-[#F8FAFC] p-3 md:hidden">
           {orders.map((order) => (
             <AdminOrderMobileCard key={order.id} order={order} />
           ))}
@@ -2764,26 +2788,125 @@ function AdminOrderMetricCard({
 }
 
 function AdminOrderTableRow({ order }: { order: OrderRecord }) {
-  const notice = adminOrderRowNotice(order);
+  const effectivePayment = getEffectivePaymentStatus(order);
+  const isRefundedOrCancelled =
+    effectivePayment === "REFUNDED" ||
+    order.orderStatus === "CANCELLED" ||
+    (order.refundRequests ?? []).length > 0;
+  const platformFeePaise = order.platformFeePaise ?? 0;
+  const productRefundPaise = Math.max(0, order.totalPaise - platformFeePaise);
+  const firstItem = order.items?.[0];
+  const itemCount = order.items?.length ?? 0;
+  const sellerName =
+    firstItem?.seller?.storeName ?? order.sellerSplits?.[0]?.seller?.storeName ?? "Seller";
+  const customerName =
+    order.customer?.user?.fullName?.trim() ||
+    order.customer?.user?.email?.split("@")[0] ||
+    "Customer";
+  const customerEmail = order.customer?.user?.email;
+  const customerPhone = order.customer?.user?.phone;
+  const paymentProvider =
+    order.payments?.[0]?.provider ||
+    order.payments?.[0]?.method ||
+    (order.buyerCountryCode === "IN" ? "Payment" : "Online");
 
   return (
     <tr className="align-middle transition-colors hover:bg-[#FFFCFB]">
-      <td className="px-5 py-5">
-        <AdminOrderIdentity order={order} />
+      <td className="px-4 py-3.5">
+        <Link
+          href={`/admin/orders/${order.orderNumber}`}
+          className="font-black text-[#0B1F3A] text-sm hover:text-[#ED3500] hover:underline"
+        >
+          {order.orderNumber}
+        </Link>
+        <p className="mt-1 text-xs font-semibold text-[#667085]">
+          {formatDate(order.createdAt)}
+        </p>
+        <span className="mt-1 inline-block rounded bg-[#F0F7FF] px-1.5 py-0.5 text-[10px] font-black uppercase text-[#163B5C]">
+          Market {order.buyerCountryCode ?? "IN"}
+        </span>
       </td>
-      <td className="px-5 py-5">
-        <AdminOrderProgressTrack order={order} />
-        <AdminOrderNotice notice={notice} className="mt-3" />
+
+      <td className="px-4 py-3.5">
+        <p className="font-bold text-[#1F2933] text-sm truncate max-w-[170px]" title={customerName}>
+          {customerName}
+        </p>
+        <p className="text-xs text-[#667085] truncate max-w-[170px]" title={customerEmail ?? ""}>
+          {customerEmail ?? "No email"}
+        </p>
+        {customerPhone ? (
+          <p className="text-[11px] text-[#667085] truncate">{customerPhone}</p>
+        ) : null}
       </td>
-      <td className="px-5 py-5">
-        <AdminOrderAmount order={order} />
+
+      <td className="px-4 py-3.5">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block rounded-full bg-[#F3F4F6] px-2 py-0.5 text-[11px] font-black text-[#374151]">
+            {itemCount} {itemCount === 1 ? "item" : "items"}
+          </span>
+        </div>
+        {firstItem ? (
+          <p
+            className="mt-1 text-xs font-semibold text-[#1F2933] truncate max-w-[190px]"
+            title={firstItem.productNameSnapshot}
+          >
+            {firstItem.productNameSnapshot}
+          </p>
+        ) : null}
+        <p className="text-[11px] font-medium text-[#667085] truncate max-w-[190px]">
+          by {sellerName}
+        </p>
       </td>
-      <td className="px-5 py-5">
-        <AdminOrderDetails order={order} />
+
+      <td className="px-4 py-3.5">
+        <StatusBadge tone={statusTone(order.orderStatus)}>
+          {humanize(order.orderStatus)}
+        </StatusBadge>
       </td>
-      <td className="px-5 py-5 text-right">
-        <Button asChild size="sm" variant="outline" className="border-[#FFD0C2] text-[#ED3500]">
-          <Link href={`/admin/orders/${order.orderNumber}`}>View details</Link>
+
+      <td className="px-4 py-3.5">
+        <StatusBadge tone={statusTone(effectivePayment)}>
+          {humanize(effectivePayment)}
+        </StatusBadge>
+        <p className="mt-1 text-[11px] font-medium text-[#667085] truncate">
+          {humanize(paymentProvider)}
+        </p>
+      </td>
+
+      <td className="px-4 py-3.5">
+        <StatusBadge tone={statusTone(order.deliveryStatus)}>
+          {humanize(order.deliveryStatus)}
+        </StatusBadge>
+        <p className="mt-1 text-[11px] font-medium text-[#667085] truncate">
+          {humanize(order.deliveryDetail?.deliveryMode ?? "Standard")}
+        </p>
+      </td>
+
+      <td className="px-4 py-3.5">
+        <p className="font-black text-[#0B1F3A] text-sm">
+          {formatPaise(order.totalPaise, order.currency)}
+        </p>
+        {isRefundedOrCancelled && (effectivePayment === "REFUNDED" || order.orderStatus === "CANCELLED") ? (
+          <div className="mt-1 space-y-0.5">
+            <p className="text-[11px] font-bold text-[#B42318]">
+              Refund: {formatPaise(productRefundPaise, order.currency)}
+            </p>
+            {platformFeePaise > 0 ? (
+              <p className="text-[10px] font-semibold text-[#667085]">
+                Fee: {formatPaise(platformFeePaise, order.currency)}
+              </p>
+            ) : null}
+          </div>
+        ) : order.buyerCurrency && order.buyerCurrency !== order.currency ? (
+          <p className="mt-0.5 text-xs font-semibold text-[#163B5C]">
+            {formatMinor(order.buyerTotalMinor ?? order.totalPaise, order.buyerCurrency)}
+          </p>
+        ) : null}
+      </td>
+
+      <td className="px-4 py-3.5 text-right">
+        <Button asChild size="sm" variant="outline" className="border-[#FFD0C2] text-[#ED3500] hover:bg-[#FFF5F2]">
+          <Link href={`/admin/orders/${order.orderNumber}`}>View</Link>
         </Button>
       </td>
     </tr>
@@ -2791,21 +2914,84 @@ function AdminOrderTableRow({ order }: { order: OrderRecord }) {
 }
 
 function AdminOrderMobileCard({ order }: { order: OrderRecord }) {
+  const effectivePayment = getEffectivePaymentStatus(order);
+  const isRefundedOrCancelled =
+    effectivePayment === "REFUNDED" ||
+    order.orderStatus === "CANCELLED" ||
+    (order.refundRequests ?? []).length > 0;
+  const platformFeePaise = order.platformFeePaise ?? 0;
+  const productRefundPaise = Math.max(0, order.totalPaise - platformFeePaise);
+  const firstItem = order.items?.[0];
+  const itemCount = order.items?.length ?? 0;
+  const sellerName =
+    firstItem?.seller?.storeName ?? order.sellerSplits?.[0]?.seller?.storeName ?? "Seller";
+  const customerName =
+    order.customer?.user?.fullName?.trim() ||
+    order.customer?.user?.email?.split("@")[0] ||
+    "Customer";
+
   return (
-    <div className="rounded-xl border border-[#D8E2EA] bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <AdminOrderIdentity order={order} />
+    <div className="rounded-xl border border-[#D8E2EA] bg-white p-4 shadow-sm space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Link
+            href={`/admin/orders/${order.orderNumber}`}
+            className="font-black text-base text-[#0B1F3A] hover:text-[#ED3500]"
+          >
+            {order.orderNumber}
+          </Link>
+          <p className="text-xs font-semibold text-[#667085]">{formatDate(order.createdAt)}</p>
+        </div>
         <Button asChild size="sm" variant="outline" className="border-[#FFD0C2] text-[#ED3500]">
-          <Link href={`/admin/orders/${order.orderNumber}`}>View details</Link>
+          <Link href={`/admin/orders/${order.orderNumber}`}>View</Link>
         </Button>
       </div>
-      <div className="mt-4">
-        <AdminOrderProgressTrack order={order} compact />
-        <AdminOrderNotice notice={adminOrderRowNotice(order)} className="mt-3" />
+
+      <div className="flex flex-wrap gap-2">
+        <StatusBadge tone={statusTone(order.orderStatus)}>
+          Order: {humanize(order.orderStatus)}
+        </StatusBadge>
+        <StatusBadge tone={statusTone(effectivePayment)}>
+          Payment: {humanize(effectivePayment)}
+        </StatusBadge>
+        <StatusBadge tone={statusTone(order.deliveryStatus)}>
+          Delivery: {humanize(order.deliveryStatus)}
+        </StatusBadge>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <AdminOrderAmount order={order} />
-        <AdminOrderDetails order={order} />
+
+      <div className="rounded-lg bg-[#F8FAFC] p-3 text-xs space-y-1">
+        <div className="flex justify-between">
+          <span className="font-semibold text-[#667085]">Customer:</span>
+          <span className="font-bold text-[#1F2933]">{customerName}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="font-semibold text-[#667085]">Items:</span>
+          <span className="font-medium text-[#1F2933]">
+            {itemCount} item(s) {firstItem ? `• ${firstItem.productNameSnapshot.slice(0, 25)}...` : ""}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="font-semibold text-[#667085]">Seller:</span>
+          <span className="font-medium text-[#1F2933]">{sellerName}</span>
+        </div>
+        <div className="flex justify-between pt-1 border-t border-[#E5E7EB]">
+          <span className="font-bold text-[#1F2933]">Total:</span>
+          <span className="font-black text-sm text-[#0B1F3A]">
+            {formatPaise(order.totalPaise, order.currency)}
+          </span>
+        </div>
+        {isRefundedOrCancelled && (effectivePayment === "REFUNDED" || order.orderStatus === "CANCELLED") ? (
+          <div className="pt-1 text-right">
+            <span className="font-bold text-xs text-[#B42318]">
+              Product Refund: {formatPaise(productRefundPaise, order.currency)}
+            </span>
+            {platformFeePaise > 0 ? (
+              <span className="block text-[11px] font-semibold text-[#667085]">
+                Platform Fee Retained: {formatPaise(platformFeePaise, order.currency)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -3083,13 +3269,19 @@ function adminOrderRowNotice(order: OrderRecord): {
   return { tone: "warning", text: "Waiting for seller, payment, or delivery progress." };
 }
 
+export { getEffectivePaymentStatus };
+
 function AdminOrderStatusSummary({
   order,
   compact = false,
 }: {
-  order: Pick<OrderRecord, "orderStatus" | "paymentStatus" | "deliveryStatus">;
+  order: Pick<OrderRecord, "orderStatus" | "paymentStatus" | "deliveryStatus"> & {
+    payments?: OrderRecord["payments"];
+    refundRequests?: OrderRecord["refundRequests"];
+  };
   compact?: boolean;
 }) {
+  const effectivePayment = getEffectivePaymentStatus(order);
   const entries = [
     {
       key: "order",
@@ -3100,8 +3292,8 @@ function AdminOrderStatusSummary({
     {
       key: "payment",
       label: "Payment",
-      value: order.paymentStatus,
-      detail: paymentStatusHelp(order.paymentStatus),
+      value: effectivePayment,
+      detail: paymentStatusHelp(effectivePayment),
     },
     {
       key: "delivery",
@@ -4269,6 +4461,15 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
       },
     }));
 
+  const effectivePayment = order ? getEffectivePaymentStatus(order) : "PENDING";
+  const isRefundedOrCancelled =
+    Boolean(order) &&
+    (effectivePayment === "REFUNDED" ||
+      order?.orderStatus === "CANCELLED" ||
+      (order?.refundRequests ?? []).length > 0);
+  const platformFeePaise = order?.platformFeePaise ?? 0;
+  const productRefundPaise = order ? Math.max(0, order.totalPaise - platformFeePaise) : 0;
+
   return (
     <AdminResourceChrome
       title={`Order ${orderNumber}`}
@@ -4315,6 +4516,85 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                 <MetricCard label="Packages" value={`${order.shipments?.length ?? 0}`} />
               </div>
             </Panel>
+
+            {isRefundedOrCancelled ? (
+              <Panel>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F4B8B8]/40 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#FDECEC] text-[#B42318]">
+                      <ShieldAlert className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-black text-[#1F2933]">Refund & Cancellation Breakdown</h3>
+                      <p className="text-xs font-semibold text-[#667085]">
+                        Standard marketplace ecommerce procedure: product merchandise amount is refunded to buyer, while platform fee is retained.
+                      </p>
+                    </div>
+                  </div>
+                  <StatusBadge tone={statusTone(effectivePayment)}>
+                    Payment: {humanize(effectivePayment)}
+                  </StatusBadge>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border border-[#F4B8B8] bg-[#FDECEC]/40 p-3.5">
+                    <p className="text-xs font-bold text-[#667085]">Product Refund (to Buyer)</p>
+                    <p className="mt-1 text-xl font-black text-[#B42318]">
+                      {formatPaise(productRefundPaise, order.currency)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-[#667085]">
+                      Full merchandise amount refunded
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-3.5">
+                    <p className="text-xs font-bold text-[#667085]">Platform Fee (Retained)</p>
+                    <p className="mt-1 text-xl font-black text-[#1F2933]">
+                      {formatPaise(platformFeePaise, order.currency)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-[#667085]">
+                      Non-refundable marketplace fee
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-3.5">
+                    <p className="text-xs font-bold text-[#667085]">Original Order Total</p>
+                    <p className="mt-1 text-xl font-black text-[#163B5C]">
+                      {formatPaise(order.totalPaise, order.currency)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-[#667085]">
+                      Total paid at checkout
+                    </p>
+                  </div>
+                </div>
+
+                {(order.refundRequests ?? []).length > 0 ? (
+                  <div className="mt-4 overflow-hidden rounded-lg border border-[#E5E7EB]">
+                    <div className="bg-[#F8FAFC] px-4 py-2 border-b border-[#E5E7EB]">
+                      <p className="text-xs font-black uppercase tracking-wide text-[#344054]">
+                        Refund Request Records
+                      </p>
+                    </div>
+                    <div className="divide-y divide-[#E5E7EB]">
+                      {order.refundRequests!.map((refund) => (
+                        <div key={refund.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-xs">
+                          <div>
+                            <p className="font-black text-[#1F2933]">{refund.refundNumber ?? refund.id}</p>
+                            <p className="text-[#667085]">{humanize(refund.reason ?? "Order cancelled")}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <StatusBadge tone={statusTone(refund.status)}>{humanize(refund.status)}</StatusBadge>
+                            <p className="font-black text-[#1F2933] text-sm">
+                              {formatPaise(refund.approvedAmountPaise ?? refund.amountPaise ?? 0, order.currency)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </Panel>
+            ) : null}
 
             <AdminOrderAddressSection order={order} />
 
@@ -13359,6 +13639,27 @@ function OrderStatusForm({
         >
           Update status
         </Button>
+        {currentOrderStatus === "CANCELLED" && currentPaymentStatus === "PAID" ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-[#F4B8B8] bg-[#FDECEC] text-[#B42318] hover:bg-[#FCD8D8]"
+            disabled={disabled}
+            onClick={() =>
+              onSubmit({
+                paymentStatus: "REFUNDED",
+                note: note || "Order cancelled - payment marked refunded by admin",
+              })
+            }
+          >
+            Mark payment as refunded
+          </Button>
+        ) : null}
+        {currentPaymentStatus === "REFUNDED" ? (
+          <div className="rounded-md border border-[#F4B8B8] bg-[#FDECEC] p-2.5 text-xs font-semibold text-[#B42318]">
+            Payment is recorded as Refunded.
+          </div>
+        ) : null}
       </div>
     </Panel>
   );

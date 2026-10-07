@@ -1,6 +1,7 @@
 import {
   apiBaseUrl,
   buildAuthHeaders,
+  downloadAuthenticatedBlob,
   IndihubApiError,
   indihubFetch,
   type IndihubAuthHeaders,
@@ -454,33 +455,16 @@ export async function downloadCustomerTaxDocument(
   fallbackFileName = "purchase-document.pdf",
 ) {
   const path = `/api/account/orders/${encodeURIComponent(orderNumber)}/tax-documents/${encodeURIComponent(documentId)}/download`;
-  let response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: await buildAuthHeaders(auth),
-  });
-
-  if (response.status === 401 && auth.getBearerToken) {
-    response = await fetch(`${apiBaseUrl}${path}`, {
-      headers: await buildAuthHeaders(auth, { skipCache: true }),
-    });
-  }
-
-  if (!response.ok) {
+  try {
+    await downloadAuthenticatedBlob(path, fallbackFileName, auth);
+  } catch (cause) {
+    const status = cause instanceof IndihubApiError ? cause.status : 500;
     throw new IndihubApiError(
       "The purchase document could not be downloaded.",
-      response.status,
+      status,
+      cause,
     );
   }
-
-  const contentDisposition = response.headers.get("content-disposition") ?? "";
-  const fileNameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition);
-  const objectUrl = URL.createObjectURL(await response.blob());
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = fileNameMatch?.[1] ?? fallbackFileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(objectUrl);
 }
 
 export function cancelCustomerOrder(auth: IndihubAuthHeaders, orderNumber: string, note?: string) {

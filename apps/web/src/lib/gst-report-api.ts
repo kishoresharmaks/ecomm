@@ -2,6 +2,7 @@ import {
   IndihubApiError,
   apiBaseUrl,
   buildAuthHeaders,
+  downloadAuthenticatedBlob,
   indihubFetch,
   type IndihubAuthHeaders,
 } from "./api";
@@ -529,31 +530,10 @@ export async function downloadAuthenticatedFile(
   fallbackFileName: string,
   errorMessage: string,
 ) {
-  let response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: await buildAuthHeaders(auth),
-  });
-
-  if (response.status === 401 && auth.getBearerToken) {
-    response = await fetch(`${apiBaseUrl}${path}`, {
-      headers: await buildAuthHeaders(auth, { skipCache: true }),
-    });
-  }
-
-  if (!response.ok) {
-    throw new IndihubApiError(errorMessage, response.status);
-  }
-
-  const contentDisposition = response.headers.get("content-disposition") ?? "";
-  const fileNameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition);
-  const objectUrl = URL.createObjectURL(await response.blob());
   try {
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = fileNameMatch?.[1] ?? fallbackFileName;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+    await downloadAuthenticatedBlob(path, fallbackFileName, auth);
+  } catch (cause) {
+    const status = cause instanceof IndihubApiError ? cause.status : 500;
+    throw new IndihubApiError(errorMessage, status, cause);
   }
 }

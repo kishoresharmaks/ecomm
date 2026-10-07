@@ -2,6 +2,7 @@ import {
   apiBaseUrl,
   buildAuthHeaders,
   indihubFetch,
+  indihubFetchBlob,
   IndihubApiError,
   type IndihubAuthHeaders,
 } from "./api";
@@ -482,20 +483,10 @@ export function recordCourierCodRemittance(auth: IndihubAuthHeaders, payload: Re
 }
 
 export async function fetchCourierPackageLabel(auth: IndihubAuthHeaders, labelDownloadUrl: string) {
-  const response = await fetch(`${apiBaseUrl}${labelDownloadUrl}`, {
-    headers: await buildAuthHeaders(auth, { skipCache: true }),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new IndihubApiError("Courier label could not be downloaded.", response.status);
-  }
-
-  const disposition = response.headers.get("content-disposition") ?? "";
-  const fileNameMatch = /filename="([^"]+)"/i.exec(disposition);
+  const { blob, fileName } = await indihubFetchBlob(labelDownloadUrl, { cache: "no-store" }, auth);
   return {
-    blob: await response.blob(),
-    fileName: fileNameMatch?.[1] ?? "courier-label.pdf",
+    blob,
+    fileName: fileName ?? "courier-label.pdf",
   };
 }
 
