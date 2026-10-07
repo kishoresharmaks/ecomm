@@ -35,6 +35,7 @@ import {
   ProductStatus,
   PushNotificationType,
   RefundMethod,
+  RefundRequestStatus,
   RoleCode,
   ReturnRequestStatus,
   SellerCashReceivableStatus,
@@ -287,6 +288,15 @@ const orderInclude = {
     include: {
       events: true,
     },
+  },
+  refundRequests: {
+    where: {
+      status: { not: RefundRequestStatus.CANCELLED },
+    },
+    include: {
+      items: true,
+    },
+    orderBy: { createdAt: "desc" as const },
   },
   sellerCashReceivables: {
     orderBy: { createdAt: "desc" as const },
@@ -4884,29 +4894,80 @@ export class OrdersService {
     const safeOrder = this.customerSafeOrder(order);
     const sellerCurrency = resolveSellerOrderCurrency(order.currency, sellerId, order.items);
     const sellerSplit = order.sellerSplits.find((split) => split.sellerId === sellerId);
+    const isSellerCancelled =
+      sellerSplit?.sellerStatus === SellerOrderStatus.CANCELLED ||
+      order.orderStatus === OrderStatus.CANCELLED;
+
+    // Calculate seller refund amount:
+    const sellerRefundItems = (order.refundRequests ?? []).flatMap((r) =>
+      (r.items ?? []).filter((item) => item.sellerId === sellerId),
+    );
+    let sellerRefundPaise = sellerRefundItems.reduce((sum, item) => sum + item.amountPaise, 0);
+
+    // Fallback: If no refund line items are tagged with sellerId directly
+    // or if the split was cancelled and payment was PAID
+    if (sellerRefundPaise === 0 && (isSellerCancelled || (sellerSplit?.refundAdjustmentPaise ?? 0) !== 0)) {
+      const cancelledItemsPaise = order.items
+        .filter((item) => item.sellerId === sellerId)
+        .reduce((sum, item) => {
+          const qty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
+          if (qty <= 0) return sum;
+          return sum + Math.max(0, qty * item.unitPricePaise - (item.couponDiscountPaise ?? 0));
+        }, 0);
+
+      if ((order.refundRequests ?? []).length > 0) {
+        const totalRefunds = (order.refundRequests ?? []).reduce((sum, r) => sum + r.amountPaise, 0);
+        sellerRefundPaise = Math.min(
+          totalRefunds,
+          cancelledItemsPaise > 0 ? cancelledItemsPaise : (sellerSplit?.sellerSubtotalPaise ?? totalRefunds),
+        );
+      } else if (order.paymentStatus === PaymentStatus.PAID && isSellerCancelled) {
+        sellerRefundPaise = cancelledItemsPaise > 0 ? cancelledItemsPaise : (sellerSplit?.sellerSubtotalPaise ?? 0);
+      }
+    }
+
+    const latestRefund = (order.refundRequests ?? [])[0] ?? null;
+    const sellerRefundStatus = latestRefund
+      ? latestRefund.status
+      : (sellerRefundPaise > 0 ? RefundRequestStatus.APPROVED : null);
+
     return {
       ...safeOrder,
+      sellerRefundPaise,
+      sellerRefundStatus,
       sellerCurrencySnapshot: {
         currency: sellerCurrency.currency,
         baseCurrency: sellerCurrency.baseCurrency,
         rate: sellerCurrency.rate,
         source: sellerCurrency.source,
         sellerSubtotalMinor: sellerCurrency.sellerSubtotalMinor,
-        commissionMinor: convertBaseMinorToSellerMinor(sellerSplit?.commissionPaise, sellerCurrency),
-        gstOnCommissionMinor: convertBaseMinorToSellerMinor(
-          sellerSplit?.gstOnCommissionPaise,
-          sellerCurrency,
-        ),
-        tdsMinor: convertBaseMinorToSellerMinor(sellerSplit?.tdsPaise, sellerCurrency),
-        tcsMinor: convertBaseMinorToSellerMinor(sellerSplit?.tcsPaise, sellerCurrency),
-        platformFeeMinor: convertBaseMinorToSellerMinor(
-          sellerSplit?.platformFeePaise,
-          sellerCurrency,
-        ),
-        couponSellerFundedDiscountMinor: convertBaseMinorToSellerMinor(
-          sellerSplit?.couponSellerFundedDiscountPaise,
-          sellerCurrency,
-        ),
+        commissionMinor: isSellerCancelled
+          ? 0
+          : convertBaseMinorToSellerMinor(sellerSplit?.commissionPaise, sellerCurrency),
+        gstOnCommissionMinor: isSellerCancelled
+          ? 0
+          : convertBaseMinorToSellerMinor(
+              sellerSplit?.gstOnCommissionPaise,
+              sellerCurrency,
+            ),
+        tdsMinor: isSellerCancelled
+          ? 0
+          : convertBaseMinorToSellerMinor(sellerSplit?.tdsPaise, sellerCurrency),
+        tcsMinor: isSellerCancelled
+          ? 0
+          : convertBaseMinorToSellerMinor(sellerSplit?.tcsPaise, sellerCurrency),
+        platformFeeMinor: isSellerCancelled
+          ? 0
+          : convertBaseMinorToSellerMinor(
+              sellerSplit?.platformFeePaise,
+              sellerCurrency,
+            ),
+        couponSellerFundedDiscountMinor: isSellerCancelled
+          ? 0
+          : convertBaseMinorToSellerMinor(
+              sellerSplit?.couponSellerFundedDiscountPaise,
+              sellerCurrency,
+            ),
         couponPlatformFundedDiscountMinor: convertBaseMinorToSellerMinor(
           sellerSplit?.couponPlatformFundedDiscountPaise,
           sellerCurrency,
@@ -4919,10 +4980,12 @@ export class OrdersService {
           sellerSplit?.refundAdjustmentPaise,
           sellerCurrency,
         ),
-        netPayableMinor: convertBaseMinorToSellerMinor(
-          sellerSplit?.netPayablePaise,
-          sellerCurrency,
-        ),
+        netPayableMinor: isSellerCancelled
+          ? 0
+          : convertBaseMinorToSellerMinor(
+              sellerSplit?.netPayablePaise,
+              sellerCurrency,
+            ),
         itemAmounts: sellerCurrency.itemAmounts,
       },
       items: safeOrder.items
@@ -4939,6 +5002,7 @@ export class OrdersService {
         .filter((split) => split.sellerId === sellerId)
         .map((split) => ({
           ...split,
+          netPayablePaise: split.sellerStatus === SellerOrderStatus.CANCELLED ? 0 : split.netPayablePaise,
           shipment: split.shipment
             ? this.shipmentReadback(split.shipment, { sellerLabelAccess: true })
             : null,
@@ -5020,6 +5084,28 @@ export class OrdersService {
         currency: payment.currency,
         status: payment.status,
         createdAt: payment.createdAt,
+      })),
+      refundRequests: (order.refundRequests ?? []).map((r) => ({
+        id: r.id,
+        refundNumber: r.refundNumber,
+        status: r.status,
+        reason: r.reason,
+        method: r.method,
+        amountPaise: r.amountPaise,
+        approvedAmountPaise: r.approvedAmountPaise,
+        currency: r.currency,
+        note: r.note,
+        createdAt: r.createdAt,
+        approvedAt: r.approvedAt,
+        reviewedAt: r.reviewedAt,
+        items: (r.items ?? []).map((item) => ({
+          id: item.id,
+          orderItemId: item.orderItemId,
+          orderSellerSplitId: item.orderSellerSplitId,
+          sellerId: item.sellerId,
+          quantity: item.quantity,
+          amountPaise: item.amountPaise,
+        })),
       })),
       deliveryDetail: this.customerSafeDeliveryDetail(order.deliveryDetail, {
         publicLookup: false,

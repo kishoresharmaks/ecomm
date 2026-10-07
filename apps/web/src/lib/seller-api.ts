@@ -397,6 +397,30 @@ export type PaginatedSellerProducts = {
 };
 
 export type SellerOrder = Omit<AccountOrder, "sellerSplits" | "items"> & {
+  sellerRefundPaise?: number;
+  sellerRefundStatus?: string | null;
+  refundRequests?: Array<{
+    id: string;
+    refundNumber: string;
+    status: string;
+    reason: string;
+    method?: string | null;
+    amountPaise: number;
+    approvedAmountPaise: number;
+    currency: string;
+    note?: string | null;
+    createdAt: string;
+    approvedAt?: string | null;
+    reviewedAt?: string | null;
+    items?: Array<{
+      id: string;
+      orderItemId: string;
+      orderSellerSplitId: string;
+      sellerId: string;
+      quantity: number;
+      amountPaise: number;
+    }>;
+  }>;
   sellerCurrencySnapshot?: {
     currency: string;
     baseCurrency: string;

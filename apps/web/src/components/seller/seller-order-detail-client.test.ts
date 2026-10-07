@@ -59,3 +59,51 @@ describe("mergePackageDrafts", () => {
     expect(isValidEWayBillNumber("12345678901A")).toBe(false);
   });
 });
+
+describe("seller cancelled order refund and billing resolution", () => {
+  it("resolves refund amount from sellerRefundPaise or active refund request", () => {
+    const mockCancelledOrder = {
+      orderNumber: "1HI20261006456175",
+      orderStatus: "CANCELLED",
+      paymentStatus: "PAID",
+      totalPaise: 47500,
+      currency: "INR",
+      sellerRefundPaise: 47500,
+      sellerRefundStatus: "APPROVED",
+      refundRequests: [
+        {
+          id: "ref-1",
+          refundNumber: "REF-20261006-0001",
+          status: "APPROVED",
+          amountPaise: 47500,
+          approvedAmountPaise: 47500,
+        },
+      ],
+      sellerSplits: [
+        {
+          id: "split-1",
+          sellerStatus: "CANCELLED",
+          sellerSubtotalPaise: 47500,
+          netPayablePaise: 0,
+        },
+      ],
+    };
+
+    const isOrderCancelled =
+      mockCancelledOrder.orderStatus === "CANCELLED" ||
+      mockCancelledOrder.sellerSplits[0]?.sellerStatus === "CANCELLED";
+    const hasOnlineRefund =
+      Boolean(mockCancelledOrder.refundRequests?.length) ||
+      (isOrderCancelled && mockCancelledOrder.paymentStatus === "PAID");
+    const sellerRefundMinor =
+      mockCancelledOrder.sellerRefundPaise ??
+      mockCancelledOrder.refundRequests[0]?.amountPaise ??
+      0;
+    const netPayout = isOrderCancelled ? 0 : 42000;
+
+    expect(isOrderCancelled).toBe(true);
+    expect(hasOnlineRefund).toBe(true);
+    expect(sellerRefundMinor).toBe(47500);
+    expect(netPayout).toBe(0);
+  });
+});

@@ -161,7 +161,11 @@ export function SellerOrdersClient() {
           const primaryImageSrc = firstItem ? primarySellerImage(firstItem.product?.images) : null;
           const resolvedSrc = resolveImageSource(primaryImageSrc);
 
-          const hasCodPayment = order.payments?.some(p => p.method === "COD");
+          const hasCodPayment = order.payments?.some((p) => p.method === "COD");
+          const isCancelled = order.orderStatus === "CANCELLED" || sellerSplit?.sellerStatus === "CANCELLED";
+          const hasRefund = Boolean(order.refundRequests && order.refundRequests.length > 0) || (isCancelled && order.paymentStatus === "PAID");
+          const refundAmount = order.sellerRefundPaise ?? (order.refundRequests?.[0]?.approvedAmountPaise || order.refundRequests?.[0]?.amountPaise || (isCancelled ? sellerSubtotal : 0));
+          const refundStatus = order.sellerRefundStatus || order.refundRequests?.[0]?.status || (isCancelled && order.paymentStatus === "PAID" ? "REFUNDED" : null);
 
           return (
             <div
@@ -194,14 +198,37 @@ export function SellerOrdersClient() {
                   <StatusPair label="Order" status={order.orderStatus} />
                   <StatusPair label="Seller" status={sellerSplit?.sellerStatus} />
                   <StatusPair label="Delivery" status={order.deliveryStatus} />
-                  {hasCodPayment ? (
+                  {isCancelled && hasRefund ? (
+                    <StatusPair label="Refund" status={refundStatus ?? "REFUNDED"} />
+                  ) : hasCodPayment ? (
                     <StatusPair label="Payment" status={order.paymentStatus} labelOverride="COD" />
                   ) : (
                     <StatusPair label="Payment" status={order.paymentStatus} />
                   )}
+                  {isCancelled && refundAmount > 0 ? (
+                    <span className="flex items-center gap-1.5 rounded-full bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-black tracking-wide text-[#DC2626] ring-1 ring-[#FECACA]">
+                      Refund: {formatMoney(refundAmount, order.currency)}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                  <span className="font-black text-[#163B5C]">{formatMoney(sellerSubtotal ?? order.totalPaise, order.currency)}</span>
+                  {isCancelled ? (
+                    <div className="flex flex-col items-end">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-[#98A2B3] line-through">
+                          {formatMoney(sellerSubtotal || order.totalPaise, order.currency)}
+                        </span>
+                        <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-xs font-black text-[#DC2626]">
+                          Refunded
+                        </span>
+                      </div>
+                      <span className="text-sm font-black text-[#0B1F3A]">
+                        {formatMoney(0, order.currency)} Net Payout
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-black text-[#163B5C]">{formatMoney(sellerSubtotal ?? order.totalPaise, order.currency)}</span>
+                  )}
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/seller/orders/${order.orderNumber}`}>
                       Review / update

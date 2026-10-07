@@ -498,6 +498,12 @@ export function SellerOrderDetailClient({
   );
   const isTerminalSellerStatus =
     currentSellerStatus === "DELIVERED" || currentSellerStatus === "CANCELLED";
+  const isOrderCancelled = order.orderStatus === "CANCELLED" || currentSellerStatus === "CANCELLED";
+  const hasOnlineRefund = Boolean(order.refundRequests && order.refundRequests.length > 0) || (isOrderCancelled && order.paymentStatus === "PAID");
+  const sellerRefundMinor = order.sellerRefundPaise ?? (order.refundRequests?.[0]?.approvedAmountPaise || order.refundRequests?.[0]?.amountPaise || (isOrderCancelled ? sellerSubtotalMinor : 0));
+  const refundStatus = order.sellerRefundStatus || order.refundRequests?.[0]?.status || (isOrderCancelled && order.paymentStatus === "PAID" ? "APPROVED" : null);
+  const activeRefund = order.refundRequests?.[0] ?? null;
+
   const nextSellerStatus = isStorePickup
     ? isTerminalSellerStatus
       ? null
@@ -514,11 +520,15 @@ export function SellerOrderDetailClient({
       icon: ShoppingBag,
     },
     {
-      label: "Payment status",
-      value: paymentStatusText(order.paymentStatus),
-      detail: order.payments?.some((p) => p.method === "COD") ? "Cash on delivery" : "Payment collection state",
-      status: order.paymentStatus,
-      icon: CreditCard,
+      label: isOrderCancelled && hasOnlineRefund ? "Refund status" : "Payment status",
+      value: isOrderCancelled && hasOnlineRefund
+        ? (refundStatus ? `Refund ${sentenceStatus(refundStatus)}` : "Payment refunded")
+        : paymentStatusText(order.paymentStatus),
+      detail: isOrderCancelled && hasOnlineRefund
+        ? `${formatMoney(sellerRefundMinor, sellerCurrency)} refunded to customer`
+        : (order.payments?.some((p) => p.method === "COD") ? "Cash on delivery" : "Payment collection state"),
+      status: isOrderCancelled && hasOnlineRefund ? "REFUNDED" : order.paymentStatus,
+      icon: isOrderCancelled && hasOnlineRefund ? CheckCircle2 : CreditCard,
     },
     {
       label: "Delivery status",
@@ -585,9 +595,20 @@ export function SellerOrderDetailClient({
             <p className="text-sm font-bold text-[#667085]">
               Seller subtotal ({sellerCurrency})
             </p>
-            <p className="mt-1 text-3xl font-black leading-tight text-[#163B5C]">
-              {formatMoney(sellerSubtotalMinor, sellerCurrency)}
-            </p>
+            {isOrderCancelled ? (
+              <>
+                <p className="mt-1 text-3xl font-black leading-tight text-[#98A2B3] line-through">
+                  {formatMoney(sellerSubtotalMinor, sellerCurrency)}
+                </p>
+                <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#FEF2F2] px-2.5 py-1 text-xs font-black text-[#DC2626] ring-1 ring-[#FECACA]">
+                  Cancelled • Refunded to Buyer
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 text-3xl font-black leading-tight text-[#163B5C]">
+                {formatMoney(sellerSubtotalMinor, sellerCurrency)}
+              </p>
+            )}
             {usesSeparateSellerCurrency ? (
               <div className="mt-2 space-y-1 text-xs font-bold leading-5 text-[#667085]">
                 <p>
@@ -599,97 +620,137 @@ export function SellerOrderDetailClient({
             ) : null}
             {sellerSplit ? (
               <div className="mt-4 space-y-2 text-sm font-semibold text-[#667085]">
-                <div className="flex justify-between gap-4 lg:justify-end">
-                  <span>Gross Amount</span>
-                  <span className="text-[#1F2933]">
-                    {formatMoney(sellerSubtotalMinor, sellerCurrency)}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 lg:justify-end">
-                  <span>Commission</span>
-                  <span className="text-[#9F2600]">
-                    -{formatMoney(
-                      sellerCurrencySnapshot?.commissionMinor ?? sellerSplit.commissionPaise ?? 0,
-                      sellerCurrency,
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 lg:justify-end">
-                  <span>Seller settlement fee</span>
-                  <span className="text-[#9F2600]">
-                    -{formatMoney(
-                      sellerCurrencySnapshot?.platformFeeMinor ?? sellerSplit.platformFeePaise ?? 0,
-                      sellerCurrency,
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 lg:justify-end">
-                  <span>GST on Comm/Fee</span>
-                  <span className="text-[#9F2600]">
-                    -{formatMoney(
-                      sellerCurrencySnapshot?.gstOnCommissionMinor ??
-                        sellerSplit.gstOnCommissionPaise ??
-                        0,
-                      sellerCurrency,
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 lg:justify-end">
-                  <span>TDS</span>
-                  <span className="text-[#9F2600]">
-                    -{formatMoney(
-                      sellerCurrencySnapshot?.tdsMinor ?? sellerSplit.tdsPaise ?? 0,
-                      sellerCurrency,
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 lg:justify-end">
-                  <span>TCS</span>
-                  <span className="text-[#9F2600]">
-                    -{formatMoney(
-                      sellerCurrencySnapshot?.tcsMinor ?? sellerSplit.tcsPaise ?? 0,
-                      sellerCurrency,
-                    )}
-                  </span>
-                </div>
-                {(sellerSplit.couponSellerFundedDiscountPaise ?? 0) > 0 ? (
-                  <div className="flex justify-between gap-4 lg:justify-end">
-                    <span>Seller-funded coupon</span>
-                    <span className="text-[#9F2600]">
-                      -{formatMoney(
-                        sellerCurrencySnapshot?.couponSellerFundedDiscountMinor ??
-                          sellerSplit.couponSellerFundedDiscountPaise ??
-                          0,
-                        sellerCurrency,
-                      )}
-                    </span>
-                  </div>
-                ) : null}
-                {(sellerSplit.couponPlatformFundedDiscountPaise ?? 0) > 0 ? (
-                  <p className="mt-2 text-xs font-bold text-[#0F8A5F]">
-                    Platform-funded coupon shown to buyer, seller payout unaffected
-                  </p>
-                ) : null}
-                <div className="mt-3 flex justify-between gap-4 border-t border-[#F2D5CC] pt-3 text-base lg:justify-end">
-                  <span className="font-bold text-[#163B5C]">Net added to Wallet</span>
-                  <span className="font-black text-[#0F8A5F]">
-                    {formatMoney(
-                      (sellerCurrencySnapshot?.netPayableMinor || sellerSplit.netPayablePaise)
-                        ? (sellerCurrencySnapshot?.netPayableMinor ?? sellerSplit.netPayablePaise ?? 0)
-                        : Math.max(
+                {isOrderCancelled ? (
+                  <>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>Gross Amount</span>
+                      <span className="text-[#1F2933]">
+                        {formatMoney(sellerSubtotalMinor, sellerCurrency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span className="font-bold text-[#DC2626]">Customer Refund (Product)</span>
+                      <span className="font-bold text-[#DC2626]">
+                        -{formatMoney(sellerRefundMinor, sellerCurrency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end text-xs text-[#98A2B3]">
+                      <span>Marketplace Commission</span>
+                      <span>₹0.00 (Waived)</span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end text-xs text-[#98A2B3]">
+                      <span>Settlement & Platform Fee</span>
+                      <span>₹0.00 (Waived)</span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end text-xs text-[#98A2B3]">
+                      <span>Taxes & GST on Fee</span>
+                      <span>₹0.00 (Waived)</span>
+                    </div>
+                    <div className="mt-3 flex justify-between gap-4 border-t border-[#F2D5CC] pt-3 text-base lg:justify-end">
+                      <span className="font-bold text-[#163B5C]">Net Wallet Payout</span>
+                      <span className="font-black text-[#667085]">
+                        {formatMoney(0, sellerCurrency)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-semibold text-[#98A2B3]">
+                      Package cancelled. No payout credited to seller wallet.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>Gross Amount</span>
+                      <span className="text-[#1F2933]">
+                        {formatMoney(sellerSubtotalMinor, sellerCurrency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>Commission</span>
+                      <span className="text-[#9F2600]">
+                        -{formatMoney(
+                          sellerCurrencySnapshot?.commissionMinor ?? sellerSplit.commissionPaise ?? 0,
+                          sellerCurrency,
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>Seller settlement fee</span>
+                      <span className="text-[#9F2600]">
+                        -{formatMoney(
+                          sellerCurrencySnapshot?.platformFeeMinor ?? sellerSplit.platformFeePaise ?? 0,
+                          sellerCurrency,
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>GST on Comm/Fee</span>
+                      <span className="text-[#9F2600]">
+                        -{formatMoney(
+                          sellerCurrencySnapshot?.gstOnCommissionMinor ??
+                            sellerSplit.gstOnCommissionPaise ??
                             0,
-                            sellerSubtotalMinor -
-                              ((sellerCurrencySnapshot?.commissionMinor ?? sellerSplit.commissionPaise ?? 0) +
-                                (sellerCurrencySnapshot?.platformFeeMinor ?? sellerSplit.platformFeePaise ?? 0) +
-                                (sellerCurrencySnapshot?.gstOnCommissionMinor ?? sellerSplit.gstOnCommissionPaise ?? 0) +
-                                (sellerCurrencySnapshot?.tdsMinor ?? sellerSplit.tdsPaise ?? 0) +
-                                (sellerCurrencySnapshot?.tcsMinor ?? sellerSplit.tcsPaise ?? 0) +
-                                (sellerCurrencySnapshot?.couponSellerFundedDiscountMinor ?? sellerSplit.couponSellerFundedDiscountPaise ?? 0)),
-                          ),
-                      sellerCurrency,
-                    )}
-                  </span>
-                </div>
+                          sellerCurrency,
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>TDS</span>
+                      <span className="text-[#9F2600]">
+                        -{formatMoney(
+                          sellerCurrencySnapshot?.tdsMinor ?? sellerSplit.tdsPaise ?? 0,
+                          sellerCurrency,
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>TCS</span>
+                      <span className="text-[#9F2600]">
+                        -{formatMoney(
+                          sellerCurrencySnapshot?.tcsMinor ?? sellerSplit.tcsPaise ?? 0,
+                          sellerCurrency,
+                        )}
+                      </span>
+                    </div>
+                    {(sellerSplit.couponSellerFundedDiscountPaise ?? 0) > 0 ? (
+                      <div className="flex justify-between gap-4 lg:justify-end">
+                        <span>Seller-funded coupon</span>
+                        <span className="text-[#9F2600]">
+                          -{formatMoney(
+                            sellerCurrencySnapshot?.couponSellerFundedDiscountMinor ??
+                              sellerSplit.couponSellerFundedDiscountPaise ??
+                              0,
+                            sellerCurrency,
+                          )}
+                        </span>
+                      </div>
+                    ) : null}
+                    {(sellerSplit.couponPlatformFundedDiscountPaise ?? 0) > 0 ? (
+                      <p className="mt-2 text-xs font-bold text-[#0F8A5F]">
+                        Platform-funded coupon shown to buyer, seller payout unaffected
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex justify-between gap-4 border-t border-[#F2D5CC] pt-3 text-base lg:justify-end">
+                      <span className="font-bold text-[#163B5C]">Net added to Wallet</span>
+                      <span className="font-black text-[#0F8A5F]">
+                        {formatMoney(
+                          (sellerCurrencySnapshot?.netPayableMinor || sellerSplit.netPayablePaise)
+                            ? (sellerCurrencySnapshot?.netPayableMinor ?? sellerSplit.netPayablePaise ?? 0)
+                            : Math.max(
+                                0,
+                                sellerSubtotalMinor -
+                                  ((sellerCurrencySnapshot?.commissionMinor ?? sellerSplit.commissionPaise ?? 0) +
+                                    (sellerCurrencySnapshot?.platformFeeMinor ?? sellerSplit.platformFeePaise ?? 0) +
+                                    (sellerCurrencySnapshot?.gstOnCommissionMinor ?? sellerSplit.gstOnCommissionPaise ?? 0) +
+                                    (sellerCurrencySnapshot?.tdsMinor ?? sellerSplit.tdsPaise ?? 0) +
+                                    (sellerCurrencySnapshot?.tcsMinor ?? sellerSplit.tcsPaise ?? 0) +
+                                    (sellerCurrencySnapshot?.couponSellerFundedDiscountMinor ?? sellerSplit.couponSellerFundedDiscountPaise ?? 0)),
+                              ),
+                          sellerCurrency,
+                        )}
+                      </span>
+                    </div>
+                  </>
+                )}
                 {(order.platformFeePaise ?? 0) > 0 ? (
                   <div className="mt-3 border-t border-dashed border-[#F2D5CC] pt-2 text-xs font-semibold text-[#667085]">
                     <div className="flex justify-between gap-4 lg:justify-end">
@@ -714,6 +775,44 @@ export function SellerOrderDetailClient({
           </div>
         </div>
       </SellerPanel>
+
+      {isOrderCancelled && (hasOnlineRefund || activeRefund) ? (
+        <SellerPanel className="border-[#FECACA] bg-[#FEF2F2]/40 p-4">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-[#DC2626]" aria-hidden="true" />
+            <h3 className="text-base font-black text-[#1F2933]">Cancellation & Customer Refund Details</h3>
+          </div>
+          <p className="mt-1 text-xs font-semibold text-[#667085]">
+            This package was cancelled. The customer refund was issued for the product item amount in accordance with marketplace policy (non-refundable platform and delivery fees are excluded).
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 rounded-lg border border-[#FECACA] bg-white p-3.5 text-xs">
+            <div>
+              <p className="font-semibold text-[#667085]">Refund Status</p>
+              <div className="mt-1">
+                <SellerStatusPill status={refundStatus ?? "APPROVED"} />
+              </div>
+            </div>
+            <div>
+              <p className="font-semibold text-[#667085]">Refunded to Buyer</p>
+              <p className="mt-1 text-base font-black text-[#DC2626]">
+                {formatMoney(sellerRefundMinor, sellerCurrency)}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-[#667085]">Refund Reference</p>
+              <p className="mt-1 font-mono font-bold text-[#163B5C]">
+                {activeRefund?.refundNumber ?? "REF-APPROVED"}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-[#667085]">Payment Method</p>
+              <p className="mt-1 font-bold text-[#1F2933]">
+                {order.payments?.[0]?.provider ? `${order.payments[0].provider} (Online)` : "Original Payment Method"}
+              </p>
+            </div>
+          </div>
+        </SellerPanel>
+      ) : null}
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="grid content-start gap-4">
