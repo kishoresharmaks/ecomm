@@ -78,9 +78,11 @@ import {
   ApproveRefundDto,
   AdjustRefundAmountDto,
   CreateCancellationDto,
+  CreateOrderRefundDto,
   CreateReturnRequestDto,
   InitiateRefundDto,
   ManualRefundDto,
+  ReconcileRefundsDto,
   RefundListQueryDto,
   ReversePickupAssignmentDto,
   ReversePickupDecision,
@@ -93,6 +95,7 @@ import {
   SellerReturnDecision,
   SellerReturnDecisionDto,
   SellerReturnNoteDto,
+  UnrefundedCancelledOrdersQueryDto,
   UpdateReturnStatusDto,
 } from "./dto/returns.dto";
 import {
@@ -100,6 +103,11 @@ import {
   prorateAllocatedPaise,
   sellerPayoutAdjustmentForLine,
 } from "./return-finance";
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function safeUuid(id?: string | null): string | null {
+  return id && UUID_REGEX.test(id) ? id : null;
+}
 
 const pendingReturnItemStatuses = [
   ReturnRequestItemStatus.PENDING_REVIEW,
@@ -880,6 +888,241 @@ export class ReturnsService {
 
     return {
       data: result,
+    };
+  }
+
+  async getReturnOrderById(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+  ): Promise<ReturnOrder> {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true, name: true, categoryId: true, slug: true } },
+            productVariant: {
+              select: {
+                id: true,
+                sku: true,
+                variantName: true,
+                currency: true,
+                packageWeightGrams: true,
+                packageLengthCm: true,
+                packageBreadthCm: true,
+                packageHeightCm: true,
+              },
+            },
+            seller: { select: { id: true, storeName: true, slug: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        sellerSplits: { include: { payout: true } },
+        shipments: { include: { packages: true } },
+        deliveryDetail: true,
+        statusEvents: {
+          where: { newStatus: DeliveryStatus.DELIVERED },
+          orderBy: { createdAt: "asc" },
+        },
+        payments: true,
+        couponRedemption: true,
+        customer: { include: { user: true } },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException("Order not found.");
+    }
+    return order as unknown as ReturnOrder;
+  }
+
+  async processSellerSplitCancellation(
+    tx: Prisma.TransactionClient,
+    input: {
+      orderId: string;
+      sellerId: string;
+      orderSellerSplitId: string;
+      actor: RequestUser;
+      note?: string | null;
+    },
+  ) {
+    const order = await this.getReturnOrderById(tx, input.orderId);
+    const sellerItems = order.items.filter((item) => item.sellerId === input.sellerId);
+    const activeSellerItems = sellerItems.filter((item) => this.activeQuantity(item) > 0);
+
+    if (activeSellerItems.length === 0) {
+      return {
+        cancellationLines: [],
+        cancelledQuantity: 0,
+        cancelledGrossPaise: 0,
+        buyerRefundPaise: 0,
+        refundNumber: null,
+        canAutoInitiateRazorpay: false,
+        allItemsCancelled: false,
+      };
+    }
+
+    const cancellationLines = activeSellerItems.map((item) =>
+      this.cancellationLine(
+        item,
+        this.activeQuantity(item),
+        input.orderSellerSplitId,
+      ),
+    );
+
+    const cancelledQuantity = cancellationLines.reduce((sum, line) => sum + line.quantity, 0);
+    const cancelledGrossPaise = cancellationLines.reduce((sum, line) => sum + line.grossPaise, 0);
+    let buyerRefundPaise = cancellationLines.reduce(
+      (sum, line) => sum + line.buyerRefundPaise,
+      0,
+    );
+
+    const allActiveBefore = this.allActiveQuantity(order.items);
+    const allItemsCancelled = cancelledQuantity >= allActiveBefore;
+    const paidCancellation = order.paymentStatus === PaymentStatus.PAID;
+    const note = input.note?.trim() || "Seller cancelled package / unfulfilled order split.";
+
+    if (allItemsCancelled && paidCancellation) {
+      buyerRefundPaise += order.shippingPaise + order.platformFeePaise;
+    }
+
+    for (const line of cancellationLines) {
+      await tx.orderItem.update({
+        where: { id: line.orderItemId },
+        data: {
+          activeQuantity: { decrement: line.quantity },
+          retainedQuantity: { decrement: line.quantity },
+          cancelledQuantity: { increment: line.quantity },
+          cancelledAmountPaise: { increment: line.grossPaise },
+          couponAdjustmentPaise: { increment: line.couponAdjustmentPaise },
+          lifecycleStatus:
+            line.activeQuantityAfter === 0
+              ? OrderItemLifecycleStatus.CANCELLED
+              : OrderItemLifecycleStatus.PARTIALLY_CANCELLED,
+        },
+      });
+
+      await tx.productVariant.update({
+        where: { id: line.productVariantId },
+        data: { stockQuantity: { increment: line.quantity } },
+      });
+
+      await tx.inventoryMovement.create({
+        data: {
+          productVariantId: line.productVariantId,
+          movementType: InventoryMovementType.RETURN,
+          quantity: line.quantity,
+          reason: "Order package cancelled by seller",
+          referenceType: "order_cancellation",
+          referenceId: order.id,
+          createdById: safeUuid(input.actor.id),
+        },
+      });
+    }
+
+    await this.applySellerSplitCancellationAdjustments(tx, order, cancellationLines, input.actor);
+    await this.recordCouponAdjustments(tx, order, cancellationLines, input.actor, {
+      reason: allItemsCancelled
+        ? CouponAdjustmentReason.ORDER_CANCELLED
+        : CouponAdjustmentReason.PARTIAL_CANCELLED,
+      releaseUsage: allItemsCancelled && order.paymentStatus === PaymentStatus.PENDING,
+      note,
+    });
+
+    await tx.orderSellerSplit.update({
+      where: { id: input.orderSellerSplitId },
+      data: {
+        sellerStatus: SellerOrderStatus.CANCELLED,
+        settlementStatus:
+          order.paymentStatus === PaymentStatus.PAID
+            ? SellerSettlementStatus.ADJUSTED
+            : SellerSettlementStatus.CANCELLED,
+        ...(order.paymentStatus === PaymentStatus.PAID ? {} : { payoutId: null }),
+      },
+    });
+
+    const payment = this.refundablePayment(order);
+    let refundRequest = null;
+
+    if (paidCancellation && buyerRefundPaise > 0) {
+      const refundNumber = await this.createRefundNumber(tx);
+      refundRequest = await tx.refundRequest.create({
+        data: {
+          refundNumber,
+          orderId: order.id,
+          customerId: order.customerId,
+          paymentId: payment?.id ?? null,
+          status: RefundRequestStatus.APPROVED,
+          reason: RefundReason.SELLER_NON_FULFILMENT,
+          amountPaise: buyerRefundPaise,
+          approvedAmountPaise: buyerRefundPaise,
+          couponAdjustmentPaise: cancellationLines.reduce(
+            (sum, line) => sum + line.couponAdjustmentPaise,
+            0,
+          ),
+          sellerFundedCouponAdjustmentPaise: cancellationLines.reduce(
+            (sum, line) => sum + line.sellerFundedCouponAdjustmentPaise,
+            0,
+          ),
+          platformFundedCouponAdjustmentPaise: cancellationLines.reduce(
+            (sum, line) => sum + line.platformFundedCouponAdjustmentPaise,
+            0,
+          ),
+          currency: order.currency,
+          note,
+          createdById: safeUuid(input.actor.id),
+          approvedAt: new Date(),
+          reviewedAt: new Date(),
+          reviewedById: safeUuid(input.actor.id),
+          items: {
+            create: cancellationLines.map((line) => ({
+              orderItemId: line.orderItemId,
+              orderSellerSplitId: input.orderSellerSplitId,
+              sellerId: line.sellerId,
+              quantity: line.quantity,
+              amountPaise: line.buyerRefundPaise,
+              couponAdjustmentPaise: line.couponAdjustmentPaise,
+              sellerFundedCouponAdjustmentPaise: line.sellerFundedCouponAdjustmentPaise,
+              platformFundedCouponAdjustmentPaise: line.platformFundedCouponAdjustmentPaise,
+            })),
+          },
+        },
+      });
+
+      const cancelActorId = safeUuid(input.actor.id);
+      await tx.auditLog.create({
+        data: {
+          ...(cancelActorId ? { actorUserId: cancelActorId } : {}),
+          action: "refund.created_from_seller_cancellation",
+          entityType: "refund_request",
+          entityId: refundRequest.id,
+          newValue: {
+            orderNumber: order.orderNumber,
+            refundNumber,
+            amountPaise: buyerRefundPaise,
+            sellerId: input.sellerId,
+            reason: RefundReason.SELLER_NON_FULFILMENT,
+            note,
+          },
+        },
+      });
+    }
+
+    if (allItemsCancelled && order.paymentStatus === PaymentStatus.PENDING) {
+      await this.markPendingPaymentsNotRequired(tx, order, input.actor, note);
+    }
+
+    return {
+      cancellationLines,
+      cancelledQuantity,
+      cancelledGrossPaise,
+      buyerRefundPaise,
+      refundNumber: refundRequest?.refundNumber ?? null,
+      canAutoInitiateRazorpay: Boolean(
+        paidCancellation &&
+          payment?.provider === PaymentProvider.RAZORPAY &&
+          payment?.providerPaymentId,
+      ),
+      allItemsCancelled,
     };
   }
 
@@ -2121,6 +2364,384 @@ export class ReturnsService {
   async getAdminRefund(refundNumber: string) {
     const detail = await this.getRefundDetailOrThrow(refundNumber);
     return this.refundDetailReadback(detail);
+  }
+
+  async listUnrefundedCancelledOrders(query?: UnrefundedCancelledOrdersQueryDto) {
+    const limit = Math.min(query?.limit ?? 50, 100);
+    const search = query?.search?.trim();
+
+    const orders = await this.prisma.client.order.findMany({
+      where: {
+        payments: {
+          some: {
+            status: PaymentStatus.PAID,
+          },
+        },
+        OR: [
+          { orderStatus: OrderStatus.CANCELLED },
+          { sellerSplits: { some: { sellerStatus: SellerOrderStatus.CANCELLED } } },
+          { items: { some: { cancelledQuantity: { gt: 0 } } } },
+          { items: { some: { lifecycleStatus: OrderItemLifecycleStatus.CANCELLED } } },
+          { shipments: { some: { status: DeliveryStatus.CANCELLED } } },
+        ],
+        ...(search
+          ? {
+              OR: [
+                { orderNumber: { contains: search, mode: "insensitive" } },
+                { customer: { user: { email: { contains: search, mode: "insensitive" } } } },
+                { customer: { user: { fullName: { contains: search, mode: "insensitive" } } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        payments: true,
+        sellerSplits: { include: { seller: { select: { id: true, storeName: true, slug: true } } } },
+        items: {
+          include: {
+            productVariant: { select: { id: true, sku: true, variantName: true, stockQuantity: true } },
+            seller: { select: { id: true, storeName: true } },
+          },
+        },
+        refundRequests: {
+          where: {
+            status: { not: RefundRequestStatus.CANCELLED },
+          },
+        },
+        customer: {
+          include: {
+            user: { select: { id: true, email: true, fullName: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+
+    const unrefundedList = [];
+
+    for (const order of orders) {
+      const paidPaise = order.payments
+        .filter((p) => p.status === PaymentStatus.PAID)
+        .reduce((sum, p) => sum + p.amountPaise, 0);
+
+      if (paidPaise <= 0) continue;
+
+      const allItemsCancelled =
+        order.orderStatus === OrderStatus.CANCELLED ||
+        order.items.every(
+          (item) => item.activeQuantity === 0 || item.cancelledQuantity >= item.quantity,
+        );
+
+      const eligibleRefundPaise = allItemsCancelled
+        ? paidPaise
+        : order.items.reduce((sum, item) => {
+          const cancelledQty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
+          if (cancelledQty <= 0) return sum;
+          const gross = item.unitPricePaise * cancelledQty;
+          const couponAdj = prorateAllocatedPaise({
+            totalAllocationPaise: item.couponDiscountPaise,
+            originalQuantity: item.quantity,
+            affectedQuantity: cancelledQty,
+            alreadyAffectedQuantity: 0,
+          });
+          return sum + buyerRefundAmountForLine({ grossAmountPaise: gross, couponAdjustmentPaise: couponAdj });
+        }, 0);
+
+      const existingRefundedPaise = order.refundRequests.reduce(
+        (sum, req) => sum + req.amountPaise,
+        0,
+      );
+
+      const pendingRefundPaise = Math.max(0, eligibleRefundPaise - existingRefundedPaise);
+
+      if (pendingRefundPaise > 0) {
+        const razorpayPayment = order.payments.find(
+          (p) =>
+            p.status === PaymentStatus.PAID &&
+            p.provider === PaymentProvider.RAZORPAY &&
+            p.providerPaymentId,
+        );
+
+        unrefundedList.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          orderStatus: order.orderStatus,
+          deliveryStatus: order.deliveryStatus,
+          paymentStatus: order.paymentStatus,
+          currency: order.currency,
+          totalPaise: order.totalPaise,
+          paidPaise,
+          eligibleRefundPaise,
+          existingRefundedPaise,
+          pendingRefundPaise,
+          allItemsCancelled,
+          cancelledItemCount: order.items.filter(
+            (i) => i.cancelledQuantity > 0 || i.activeQuantity === 0,
+          ).length,
+          totalItemCount: order.items.length,
+          customer: {
+            id: order.customer?.id ?? null,
+            name: order.customer?.user?.fullName ?? "Customer",
+            email: order.customer?.user?.email ?? "",
+            phone: order.customer?.user?.phone ?? null,
+          },
+          paymentProvider: razorpayPayment ? "RAZORPAY" : order.payments[0]?.provider ?? "OTHER",
+          canAutoInitiateRazorpay: Boolean(razorpayPayment),
+          cancelledAt: order.updatedAt,
+          refundRequestsCount: order.refundRequests.length,
+        });
+
+        if (unrefundedList.length >= limit) {
+          break;
+        }
+      }
+    }
+
+    return {
+      items: unrefundedList,
+      totalCount: unrefundedList.length,
+    };
+  }
+
+  async reconcileUnrefundedCancelledOrder(
+    actor: RequestUser,
+    orderNumber: string,
+    options?: CreateOrderRefundDto,
+  ) {
+    const order = await this.prisma.client.order.findUnique({
+      where: { orderNumber },
+      include: {
+        payments: true,
+        sellerSplits: { include: { payout: true } },
+        items: {
+          include: {
+            productVariant: true,
+            seller: true,
+          },
+        },
+        refundRequests: {
+          where: {
+            status: { not: RefundRequestStatus.CANCELLED },
+          },
+        },
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order ${orderNumber} not found.`);
+    }
+
+    const paidPaise = order.payments
+      .filter((p) => p.status === PaymentStatus.PAID)
+      .reduce((sum, p) => sum + p.amountPaise, 0);
+
+    if (paidPaise <= 0) {
+      throw new BadRequestException(`Order ${orderNumber} has no paid online payments.`);
+    }
+
+    const allItemsCancelled =
+      order.orderStatus === OrderStatus.CANCELLED ||
+      order.items.every((i) => i.activeQuantity === 0 || i.cancelledQuantity >= i.quantity);
+
+    const eligibleRefundPaise = allItemsCancelled
+      ? paidPaise
+      : order.items.reduce((sum, item) => {
+        const cancelledQty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
+        if (cancelledQty <= 0) return sum;
+        const gross = item.unitPricePaise * cancelledQty;
+        const couponAdj = prorateAllocatedPaise({
+          totalAllocationPaise: item.couponDiscountPaise,
+          originalQuantity: item.quantity,
+          affectedQuantity: cancelledQty,
+          alreadyAffectedQuantity: 0,
+        });
+        return sum + buyerRefundAmountForLine({ grossAmountPaise: gross, couponAdjustmentPaise: couponAdj });
+      }, 0);
+
+    const existingRefundedPaise = order.refundRequests.reduce((sum, req) => sum + req.amountPaise, 0);
+    const pendingRefundPaise = Math.max(0, eligibleRefundPaise - existingRefundedPaise);
+
+    if (pendingRefundPaise <= 0) {
+      return {
+        orderNumber,
+        reconciled: false,
+        amountPaise: 0,
+        message: "Order already has full refunds recorded or no cancelled items.",
+      };
+    }
+
+    const refundablePayment = this.refundablePayment(order as unknown as ReturnOrder);
+    const note = options?.note ?? "Reconciled historical cancelled order refund.";
+
+    const result = await this.prisma.client.$transaction(async (tx) => {
+      // 1. Restock any cancelled items that haven't been restocked yet
+      for (const item of order.items) {
+        const cancelledQty = Math.max(item.cancelledQuantity, item.quantity - item.activeQuantity);
+        if (cancelledQty > 0 && item.productVariantId) {
+          const existingMovements = await tx.inventoryMovement.findMany({
+            where: {
+              referenceId: order.id,
+              productVariantId: item.productVariantId,
+              movementType: InventoryMovementType.RETURN,
+            },
+          });
+          const alreadyRestockedQty = existingMovements.reduce((sum, m) => sum + m.quantity, 0);
+          const unrecordedQty = cancelledQty - alreadyRestockedQty;
+          if (unrecordedQty > 0) {
+            await tx.productVariant.update({
+              where: { id: item.productVariantId },
+              data: { stockQuantity: { increment: unrecordedQty } },
+            });
+            await tx.inventoryMovement.create({
+              data: {
+                productVariantId: item.productVariantId,
+                movementType: InventoryMovementType.RETURN,
+                quantity: unrecordedQty,
+                reason: "Reconciled historical order cancellation restock",
+                referenceType: "order_cancellation",
+                referenceId: order.id,
+                createdById: safeUuid(actor.id),
+              },
+            });
+          }
+        }
+      }
+
+      // 2. Adjust seller splits if needed
+      for (const split of order.sellerSplits) {
+        if (
+          split.sellerStatus === SellerOrderStatus.CANCELLED &&
+          split.settlementStatus !== SellerSettlementStatus.ADJUSTED &&
+          split.settlementStatus !== SellerSettlementStatus.CANCELLED
+        ) {
+          await tx.orderSellerSplit.update({
+            where: { id: split.id },
+            data: {
+              settlementStatus: SellerSettlementStatus.ADJUSTED,
+            },
+          });
+        }
+      }
+
+      // 3. Create approved RefundRequest
+      const refundNumber = await this.createRefundNumber(tx);
+      const refundRequest = await tx.refundRequest.create({
+        data: {
+          refundNumber,
+          orderId: order.id,
+          customerId: order.customerId,
+          paymentId: refundablePayment?.id ?? null,
+          status: RefundRequestStatus.APPROVED,
+          reason: allItemsCancelled
+            ? RefundReason.ORDER_CANCELLED
+            : RefundReason.SELLER_NON_FULFILMENT,
+          amountPaise: pendingRefundPaise,
+          approvedAmountPaise: pendingRefundPaise,
+          currency: order.currency,
+          note,
+          createdById: safeUuid(actor.id),
+          approvedAt: new Date(),
+          reviewedAt: new Date(),
+          reviewedById: safeUuid(actor.id),
+        },
+      });
+
+      const reconcileActorId = safeUuid(actor.id);
+      await tx.auditLog.create({
+        data: {
+          ...(reconcileActorId ? { actorUserId: reconcileActorId } : {}),
+          action: "refund.reconciled_historical_cancellation",
+          entityType: "refund_request",
+          entityId: refundRequest.id,
+          newValue: {
+            orderNumber: order.orderNumber,
+            refundNumber,
+            amountPaise: pendingRefundPaise,
+            note,
+          },
+        },
+      });
+
+      return {
+        refundNumber,
+        refundRequestId: refundRequest.id,
+      };
+    });
+
+    let initiated = false;
+    const canAutoInitiate = Boolean(
+      options?.autoInitiate !== false &&
+        refundablePayment?.provider === PaymentProvider.RAZORPAY &&
+        refundablePayment?.providerPaymentId,
+    );
+
+    if (canAutoInitiate) {
+      try {
+        await this.initiateRefund(actor, result.refundNumber, {
+          method: RefundMethod.RAZORPAY,
+          note,
+        });
+        initiated = true;
+      } catch (err) {
+        this.logger.error(
+          `Failed auto-initiating reconciled refund ${result.refundNumber} for order ${orderNumber}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return {
+      orderNumber,
+      refundNumber: result.refundNumber,
+      amountPaise: pendingRefundPaise,
+      reconciled: true,
+      initiated,
+      canAutoInitiate,
+      status: initiated ? "INITIATED" : "APPROVED",
+      message: initiated
+        ? `Refund of ₹${pendingRefundPaise / 100} initiated via Razorpay.`
+        : `Approved refund request created for ₹${pendingRefundPaise / 100}. Ready for gateway/manual processing.`,
+    };
+  }
+
+  async reconcileAllUnrefundedCancelledOrders(actor: RequestUser, options?: ReconcileRefundsDto) {
+    const { items } = await this.listUnrefundedCancelledOrders({ limit: 100 });
+    const results = [];
+    let totalRefundedPaise = 0;
+    let reconciledCount = 0;
+
+    for (const item of items) {
+      try {
+        const res = await this.reconcileUnrefundedCancelledOrder(actor, item.orderNumber, {
+          autoInitiate: options?.autoInitiate ?? true,
+          note: options?.note ?? "Batch reconciliation for cancelled orders.",
+        });
+        if (res.reconciled) {
+          reconciledCount++;
+          totalRefundedPaise += res.amountPaise;
+        }
+        results.push(res);
+      } catch (err) {
+        results.push({
+          orderNumber: item.orderNumber,
+          reconciled: false,
+          amountPaise: item.pendingRefundPaise,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return {
+      totalScanned: items.length,
+      reconciledCount,
+      totalRefundedPaise,
+      results,
+    };
   }
 
   async approveRefund(actor: RequestUser, refundNumber: string, dto: ApproveRefundDto) {
@@ -5745,6 +6366,9 @@ export class ReturnsService {
     snapshot: Prisma.JsonValue | null,
     resolution: ReturnRequestResolution,
   ) {
+    if (!snapshot) {
+      return true;
+    }
     return productPolicyAllowsResolution(
       normalizeProductReturnPolicy(snapshot),
       resolution === ReturnRequestResolution.REPLACEMENT ? "REPLACEMENT" : "REFUND",

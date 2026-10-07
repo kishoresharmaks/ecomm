@@ -4,7 +4,14 @@ import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { AdjustRefundAmountDto, ApproveRefundDto, InitiateRefundDto, ManualRefundDto } from "./dto/returns.dto";
+import {
+  AdjustRefundAmountDto,
+  ApproveRefundDto,
+  CreateOrderRefundDto,
+  InitiateRefundDto,
+  ManualRefundDto,
+  ReconcileRefundsDto,
+} from "./dto/returns.dto";
 import { ReturnsService } from "./returns.service";
 
 @ApiTags("Admin Refunds")
@@ -12,6 +19,25 @@ import { ReturnsService } from "./returns.service";
 @Controller("admin/refunds")
 export class AdminRefundActionsController {
   constructor(@Inject(ReturnsService) private readonly returnsService: ReturnsService) {}
+
+  @Post("reconcile-pending")
+  @ApiOperation({ summary: "Batch reconcile unrefunded cancelled orders and initiate refunds." })
+  reconcilePending(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: ReconcileRefundsDto,
+  ) {
+    return this.returnsService.reconcileAllUnrefundedCancelledOrders(actor, dto);
+  }
+
+  @Post("orders/:orderNumber/create-refund")
+  @ApiOperation({ summary: "Create and initiate a refund for an unrefunded cancelled order or split." })
+  createRefundForOrder(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Body() dto: CreateOrderRefundDto,
+  ) {
+    return this.returnsService.reconcileUnrefundedCancelledOrder(actor, orderNumber, dto);
+  }
 
   @Post(":refundNumber/approve")
   @ApiOperation({ summary: "Approve a refund request for payment processing." })

@@ -700,6 +700,103 @@ describe("CourierLogisticsService", () => {
       service.handleTrackingWebhook("SHIPROCKET", { status: "DELIVERED" }, "wrong-secret"),
     ).rejects.toThrow(new UnauthorizedException("Invalid Shiprocket webhook signature."));
   });
+
+  it("cancels seller split and initiates customer refund when courier reports shipment cancellation", async () => {
+    const mockCancellationRefund = {
+      orderId: "order-1",
+      orderNumber: "1HI-1001",
+      orderSellerSplitId: "split-1",
+      cancelledQuantity: 2,
+      buyerRefundPaise: 5000,
+      refundNumber: "REF-20261007-0001",
+      canAutoInitiateRazorpay: true,
+      allItemsCancelled: true,
+    };
+
+    const mockReturnsService = {
+      processSellerSplitCancellation: vi.fn().mockResolvedValue(mockCancellationRefund),
+      initiateRefund: vi.fn().mockResolvedValue({ status: "PROCESSING" }),
+    };
+
+    const tx = {
+      courierShipment: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "courier-shipment-1",
+          orderShipmentId: "shipment-1",
+          orderId: "order-1",
+          awbNumber: "AWB1001",
+          lastWebhookAt: null,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      orderShipment: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "shipment-1",
+          orderId: "order-1",
+          sellerId: "seller-1",
+          orderSellerSplitId: "split-1",
+          status: DeliveryStatus.PENDING,
+          codCollectionSource: null,
+          order: { orderStatus: OrderStatus.PROCESSING, deliveryStatus: DeliveryStatus.PENDING },
+        }),
+        findMany: vi.fn().mockResolvedValue([{ id: "shipment-1", status: DeliveryStatus.CANCELLED }]),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      payment: {
+        findMany: vi.fn().mockResolvedValue([{ id: "pay-1", status: PaymentStatus.PAID, provider: "RAZORPAY" }]),
+      },
+      courierConsignmentPackage: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      orderShipmentPackage: {
+        findMany: vi.fn().mockResolvedValue([{ id: "package-1", status: OrderShipmentPackageStatus.IN_TRANSIT }]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderStatusEvent: {
+        create: vi.fn().mockResolvedValue({}),
+      },
+      orderSellerSplit: {
+        findUnique: vi.fn().mockResolvedValue({ id: "split-1", sellerStatus: "PROCESSING" }),
+      },
+      order: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "order-1", orderStatus: OrderStatus.PROCESSING }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      deliveryDetail: {
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+    };
+
+    const prisma = { client: {} };
+
+    const service = new CourierLogisticsService(
+      prisma as never,
+      undefined as never,
+      mockReturnsService as never,
+    );
+
+    const logisticsService = service as unknown as {
+      applyCourierTracking: (
+        tx: unknown,
+        input: unknown,
+      ) => Promise<{ cancellationRefund: { refundNumber: string } | null }>;
+    };
+
+    const result = await logisticsService.applyCourierTracking(tx, {
+      courierShipmentId: "courier-shipment-1",
+      providerCode: "SHIPROCKET",
+      awbNumber: "AWB1001",
+      trackingStatus: CourierShipmentStatus.CANCELLED,
+      statusLabel: "Cancelled by courier",
+      eventId: null,
+      payload: { status: "CANCELED" },
+    });
+
+    expect(result.cancellationRefund).toBeDefined();
+    expect(result.cancellationRefund?.refundNumber).toBe("REF-20261007-0001");
+    expect(mockReturnsService.processSellerSplitCancellation).toHaveBeenCalled();
+  });
 });
 
 function routingFailureShipment() {

@@ -11,6 +11,7 @@ import {
   ReversePickupReleaseDto,
   ReturnListQueryDto,
   ReturnQcDto,
+  UnrefundedCancelledOrdersQueryDto,
   UpdateReturnStatusDto,
 } from "./dto/returns.dto";
 import { ReturnsService } from "./returns.service";
@@ -99,6 +100,12 @@ export class AdminRefundsController {
   @ApiOperation({ summary: "List refund requests with cursor pagination." })
   listRefunds(@Query() query: RefundListQueryDto) {
     return this.returnsService.listAdminRefunds(query);
+  }
+
+  @Get("unrefunded-cancelled-orders")
+  @ApiOperation({ summary: "List unrefunded historical cancelled orders and packages." })
+  listUnrefundedOrders(@Query() query: UnrefundedCancelledOrdersQueryDto) {
+    return this.returnsService.listUnrefundedCancelledOrders(query);
   }
 
   @Get(":refundNumber")

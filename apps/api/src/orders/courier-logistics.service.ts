@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -24,6 +25,7 @@ import {
   PaymentProvider,
   PaymentStatus,
   Prisma,
+  RefundMethod,
   RoleCode,
   SellerOrderStatus,
   SellerSettlementStatus,
@@ -32,6 +34,8 @@ import {
 import type { RequestUser } from "../auth/types/indihub-request";
 import { paginationFromQuery } from "../common/pagination";
 import { PrismaService } from "../prisma/prisma.service";
+import { ReturnsService } from "../returns/returns.service";
+import { TaxDocumentsService } from "../tax/tax-documents.service";
 import { CourierAdapterRegistry } from "./courier-adapters/courier-adapter.registry";
 import type {
   CourierBookingAddress,
@@ -150,6 +154,8 @@ export class CourierLogisticsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CourierAdapterRegistry) private readonly courierAdapters: CourierAdapterRegistry,
+    @Optional() @Inject(ReturnsService) private readonly returnsService?: ReturnsService,
+    @Optional() @Inject(TaxDocumentsService) private readonly taxDocuments?: TaxDocumentsService,
   ) {}
 
   async cancelShipmentForSellerSplit(orderSellerSplitId: string, actorUserId?: string) {
@@ -660,8 +666,8 @@ export class CourierLogisticsService {
       throw new NotFoundException("Courier shipment not found.");
     }
 
-    const orderId = await this.prisma.client.$transaction(async (tx) => {
-      await this.applyCourierTracking(tx, {
+    const result = await this.prisma.client.$transaction(async (tx) => {
+      const trackingResult = await this.applyCourierTracking(tx, {
         courierShipmentId,
         providerCode: courierShipment.providerCode,
         awbNumber: courierShipment.awbNumber,
@@ -680,10 +686,30 @@ export class CourierLogisticsService {
           newValue: { trackingStatus: dto.trackingStatus, note: dto.note ?? null },
         },
       });
-      return courierShipment.orderId;
+      return {
+        orderId: courierShipment.orderId,
+        cancellationRefund: trackingResult?.cancellationRefund ?? null,
+      };
     });
 
-    return this.getOrderCourierSummary(orderId);
+    if (result.cancellationRefund?.canAutoInitiateRazorpay && result.cancellationRefund.refundNumber) {
+      try {
+        await this.returnsService?.initiateRefund(
+          result.cancellationRefund.actor,
+          result.cancellationRefund.refundNumber,
+          {
+            method: RefundMethod.RAZORPAY,
+            note: "Automatic refund for courier cancelled package.",
+          },
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed auto-initiating Razorpay refund ${result.cancellationRefund.refundNumber} on courier cancellation: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return this.getOrderCourierSummary(result.orderId);
   }
 
   async getCourierDashboard() {
@@ -1381,7 +1407,7 @@ export class CourierLogisticsService {
           return { status: "SKIPPED", reason: "No matching courier shipment found." };
         }
 
-        await this.applyCourierTracking(tx, {
+        const trackingResult = await this.applyCourierTracking(tx, {
           courierShipmentId: courierShipment.id,
           providerCode,
           awbNumber,
@@ -1398,7 +1424,11 @@ export class CourierLogisticsService {
             processedAt: new Date(),
           },
         });
-        return { status: "PROCESSED", courierShipmentId: courierShipment.id };
+        return {
+          status: "PROCESSED",
+          courierShipmentId: courierShipment.id,
+          cancellationRefund: trackingResult?.cancellationRefund ?? null,
+        };
       } catch (error) {
         if (this.isUniqueConstraint(error)) {
           return { status: "SKIPPED", reason: "Duplicate webhook event." };
@@ -1406,6 +1436,28 @@ export class CourierLogisticsService {
         throw error;
       }
     });
+
+    if (
+      result &&
+      "cancellationRefund" in result &&
+      result.cancellationRefund?.canAutoInitiateRazorpay &&
+      result.cancellationRefund.refundNumber
+    ) {
+      try {
+        await this.returnsService?.initiateRefund(
+          result.cancellationRefund.actor,
+          result.cancellationRefund.refundNumber,
+          {
+            method: RefundMethod.RAZORPAY,
+            note: "Automatic refund for third-party courier cancelled package.",
+          },
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed auto-initiating Razorpay refund ${result.cancellationRefund.refundNumber} on courier webhook cancellation: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     return result;
   }
@@ -2176,7 +2228,60 @@ export class CourierLogisticsService {
         CourierCodRemittanceStatus.COURIER_COLLECTED,
       );
     }
+
+    let cancellationRefund: {
+      refundNumber: string;
+      canAutoInitiateRazorpay: boolean;
+      actor: RequestUser;
+    } | null = null;
+
+    if (
+      (input.trackingStatus === CourierShipmentStatus.CANCELLED ||
+        input.trackingStatus === CourierShipmentStatus.RTO_DELIVERED) &&
+      orderShipment.orderSellerSplitId &&
+      this.returnsService
+    ) {
+      const split = await tx.orderSellerSplit.findUnique({
+        where: { id: orderShipment.orderSellerSplitId },
+      });
+      if (split && split.sellerStatus !== SellerOrderStatus.CANCELLED) {
+        const systemActor: RequestUser = {
+          id: orderShipment.sellerId,
+          clerkUserId: null,
+          email: "courier-sync@1handindia.internal",
+          roles: [RoleCode.ADMIN],
+        };
+        const res = await this.returnsService.processSellerSplitCancellation(tx, {
+          orderId: courierShipment.orderId,
+          sellerId: orderShipment.sellerId,
+          orderSellerSplitId: split.id,
+          actor: systemActor,
+          note:
+            input.statusLabel ??
+            `Third-party courier ${input.providerCode} marked shipment ${input.trackingStatus}.`,
+        });
+
+        if (res.allItemsCancelled && this.taxDocuments) {
+          await this.taxDocuments.cancelDraftOrderDocuments(
+            tx,
+            courierShipment.orderId,
+            "All packages cancelled due to courier cancellation/RTO.",
+          );
+        }
+
+        if (res.canAutoInitiateRazorpay && res.refundNumber) {
+          cancellationRefund = {
+            refundNumber: res.refundNumber,
+            canAutoInitiateRazorpay: res.canAutoInitiateRazorpay,
+            actor: systemActor,
+          };
+        }
+      }
+    }
+
     await this.recalculateOrderDeliveryRollup(tx, courierShipment.orderId);
+
+    return { cancellationRefund };
   }
 
   private async ensureCourierCodRemittance(
@@ -2345,6 +2450,26 @@ export class CourierLogisticsService {
       (shipment) => shipment.status !== DeliveryStatus.CANCELLED,
     );
     if (activeShipments.length === 0) {
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          deliveryStatus: DeliveryStatus.CANCELLED,
+          ...(order.orderStatus !== OrderStatus.DELIVERED ? { orderStatus: OrderStatus.CANCELLED } : {}),
+        },
+      });
+      await tx.deliveryDetail.upsert({
+        where: { orderId },
+        update: {
+          status: DeliveryStatus.CANCELLED,
+          courierTrackingStatus: this.courierRollupStatus(shipments.map((shipment) => shipment.courierTrackingStatus)),
+        },
+        create: {
+          orderId,
+          deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          status: DeliveryStatus.CANCELLED,
+          courierTrackingStatus: this.courierRollupStatus(shipments.map((shipment) => shipment.courierTrackingStatus)),
+        },
+      });
       return;
     }
     const nextDeliveryStatus = this.rollupDeliveryStatus(activeShipments.map((shipment) => shipment.status));

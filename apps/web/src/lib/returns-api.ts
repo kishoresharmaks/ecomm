@@ -653,6 +653,87 @@ export function recordManualAdminRefund(
   );
 }
 
+export type UnrefundedCancelledOrderSummary = {
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  deliveryStatus: string;
+  paymentStatus: string;
+  currency: string;
+  totalPaise: number;
+  paidPaise: number;
+  eligibleRefundPaise: number;
+  existingRefundedPaise: number;
+  pendingRefundPaise: number;
+  allItemsCancelled: boolean;
+  cancelledItemCount: number;
+  totalItemCount: number;
+  customer: {
+    id: string | null;
+    name: string;
+    email: string;
+    phone: string | null;
+  };
+  paymentProvider: string;
+  canAutoInitiateRazorpay: boolean;
+  cancelledAt: string;
+  refundRequestsCount: number;
+};
+
+export type ReconcileResult = {
+  orderNumber: string;
+  refundNumber?: string;
+  amountPaise: number;
+  reconciled: boolean;
+  initiated?: boolean;
+  canAutoInitiate?: boolean;
+  status?: string;
+  message?: string;
+  error?: string;
+};
+
+export type ReconcileBatchSummary = {
+  totalScanned: number;
+  reconciledCount: number;
+  totalRefundedPaise: number;
+  results: ReconcileResult[];
+};
+
+export function listUnrefundedCancelledOrders(
+  auth: IndihubAuthHeaders,
+  query: { limit?: number; search?: string } = {},
+) {
+  return indihubFetch<{ items: UnrefundedCancelledOrderSummary[]; totalCount: number }>(
+    `/api/admin/refunds/unrefunded-cancelled-orders${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function reconcilePendingRefunds(
+  auth: IndihubAuthHeaders,
+  payload: { autoInitiate?: boolean; note?: string } = {},
+) {
+  return indihubFetch<ReconcileBatchSummary>(
+    `/api/admin/refunds/reconcile-pending`,
+    { method: "POST", body: JSON.stringify(payload) },
+    auth,
+  );
+}
+
+export function createRefundForOrder(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  payload: { autoInitiate?: boolean; note?: string } = {},
+) {
+  return indihubFetch<ReconcileResult>(
+    `/api/admin/refunds/orders/${encodeURIComponent(orderNumber)}/create-refund`,
+    { method: "POST", body: JSON.stringify(payload) },
+    auth,
+  );
+}
+
+
 function queryString(query: Record<string, string | number | undefined | null>) {
   const params = new URLSearchParams();
 

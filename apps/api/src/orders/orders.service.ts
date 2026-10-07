@@ -34,6 +34,7 @@ import {
   ProductListingMode,
   ProductStatus,
   PushNotificationType,
+  RefundMethod,
   RoleCode,
   ReturnRequestStatus,
   SellerCashReceivableStatus,
@@ -88,6 +89,7 @@ import { ExpoPushService } from "../notifications/expo-push.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { ReturnsService } from "../returns/returns.service";
 import { readDeliveryPartnerPayoutSettings } from "../settings/delivery-partner-payout-settings";
 import { TaxDocumentsService } from "../tax/tax-documents.service";
 import { CancelOrderDto } from "./dto/cancel-order.dto";
@@ -623,6 +625,8 @@ export class OrdersService {
     private readonly sellerCashReceivables: SellerCashReceivablesService = undefined as never,
     @Inject(CourierLogisticsService)
     private readonly courierLogistics: CourierLogisticsService = undefined as never,
+    @Inject(ReturnsService)
+    private readonly returnsService: ReturnsService = undefined as never,
   ) {}
 
   async placeOrder(actor: RequestUser, dto: PlaceOrderDto) {
@@ -3782,15 +3786,33 @@ export class OrdersService {
         });
       }
 
+      let sellerCancellationResult: {
+        refundNumber: string | null;
+        canAutoInitiateRazorpay: boolean;
+        allItemsCancelled: boolean;
+      } | null = null;
+
+      if (dto.sellerStatus === SellerOrderStatus.CANCELLED && this.returnsService) {
+        sellerCancellationResult = await this.returnsService.processSellerSplitCancellation(tx, {
+          orderId: order.id,
+          sellerId: seller.id,
+          orderSellerSplitId: split.id,
+          actor,
+          note,
+        });
+      }
+
       const nextSplits = this.replaceSellerSplitStatus(
         order.sellerSplits,
         split.id,
         dto.sellerStatus,
       );
-      const nextOrderStatus = this.resolveOrderStatusFromSellerSplits(
-        order.orderStatus,
-        nextSplits,
-      );
+      const nextOrderStatus = sellerCancellationResult?.allItemsCancelled
+        ? OrderStatus.CANCELLED
+        : this.resolveOrderStatusFromSellerSplits(
+            order.orderStatus,
+            nextSplits,
+          );
       const requestedDeliveryStatus = this.deliveryStatusFromSellerStatus(dto.sellerStatus);
       if (
         requestedDeliveryStatus &&
@@ -3799,10 +3821,12 @@ export class OrdersService {
       ) {
         this.assertDeliveryStatusTransition(currentShipment.status, requestedDeliveryStatus);
       }
-      const rollupDeliveryStatus = this.resolveDeliveryStatusFromSellerSplits(
-        order.deliveryStatus,
-        nextSplits,
-      );
+      const rollupDeliveryStatus = sellerCancellationResult?.allItemsCancelled
+        ? DeliveryStatus.CANCELLED
+        : this.resolveDeliveryStatusFromSellerSplits(
+            order.deliveryStatus,
+            nextSplits,
+          );
       const nextDeliveryStatus = rollupDeliveryStatus;
       const orderStatusChanged = nextOrderStatus !== order.orderStatus;
       const deliveryStatusChanged = nextDeliveryStatus !== order.deliveryStatus;
@@ -3954,6 +3978,14 @@ export class OrdersService {
         });
       }
 
+      if (nextOrderStatus === OrderStatus.CANCELLED && this.taxDocuments) {
+        await this.taxDocuments.cancelDraftOrderDocuments(
+          tx,
+          order.id,
+          note ?? "Order package cancelled by seller.",
+        );
+      }
+
       await tx.auditLog.create({
         data: {
           actorUserId: actor.id,
@@ -3985,6 +4017,8 @@ export class OrdersService {
         codPaymentSettledBySellerCash,
         cancelledSellerSplitId:
           dto.sellerStatus === SellerOrderStatus.CANCELLED ? split.id : null,
+        refundNumber: sellerCancellationResult?.refundNumber ?? null,
+        canAutoInitiateRazorpay: sellerCancellationResult?.canAutoInitiateRazorpay ?? false,
       };
     });
 
@@ -3994,6 +4028,20 @@ export class OrdersService {
         actor.id,
       );
     }
+
+    if (result.refundNumber && result.canAutoInitiateRazorpay && this.returnsService) {
+      try {
+        await this.returnsService.initiateRefund(actor, result.refundNumber, {
+          method: RefundMethod.RAZORPAY,
+          note: "Auto-initiated refund for seller-cancelled package.",
+        });
+      } catch (refundError) {
+        this.logger.warn(
+          `Auto-initiate Razorpay refund failed for ${result.refundNumber}: ${refundError instanceof Error ? refundError.message : refundError}`,
+        );
+      }
+    }
+
     let order = await this.getOrderByIdOrThrow(result.orderId);
     if (
       result.nextDeliveryStatus === DeliveryStatus.PACKED &&
@@ -4024,6 +4072,13 @@ export class OrdersService {
         order,
         PaymentStatus.PAID,
         note ?? "Seller-collected COD accounted.",
+      );
+    }
+    if (order.paymentStatus === PaymentStatus.REFUNDED) {
+      await this.notifyCustomerPaymentStatus(
+        order,
+        PaymentStatus.REFUNDED,
+        note ?? "Refund processed for cancelled package.",
       );
     }
 
@@ -5149,7 +5204,7 @@ export class OrdersService {
       estimatedDeliveryDate: delivery.estimatedDeliveryDate,
       deliveryNote: delivery.deliveryNote,
       status: delivery.status,
-      events: delivery.events.map((event) => ({
+      events: (delivery.events ?? []).map((event) => ({
         id: event.id,
         oldStatus: event.oldStatus,
         newStatus: event.newStatus,
@@ -8619,7 +8674,7 @@ export class OrdersService {
 
     const storedEWayBillNumbers = [
       ...new Set(
-        shipment.packages
+        (shipment.packages ?? [])
           .map((shipmentPackage) => shipmentPackage.ewayBillNumber)
           .filter((value): value is string => Boolean(value)),
       ),

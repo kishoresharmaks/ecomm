@@ -7,6 +7,8 @@ import {
   Banknote,
   CheckCircle2,
   CreditCard,
+  History,
+  PackageX,
   RefreshCw,
   RotateCcw,
   Search,
@@ -16,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
+import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 import {
   DetailLine,
   EmptyReturnPanel,
@@ -29,9 +32,12 @@ import {
 import {
   adjustAdminRefundAmount,
   approveAdminRefund,
+  createRefundForOrder,
   getAdminRefund,
   initiateAdminRefund,
   listAdminRefunds,
+  listUnrefundedCancelledOrders,
+  reconcilePendingRefunds,
   recordManualAdminRefund,
   retryAdminRefund,
   type RefundDetail,
@@ -57,6 +63,7 @@ const refundMethods: RefundMethod[] = ["RAZORPAY", "BANK_TRANSFER", "UPI", "MANU
 export function AdminRefundsClient() {
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
+  const confirmation = useConfirmationDialog();
   const [status, setStatus] = useState<RefundRequestStatus | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
@@ -79,6 +86,15 @@ export function AdminRefundsClient() {
       }),
     enabled: auth.isAuthenticated,
   });
+
+  const unrefundedQuery = useQuery({
+    queryKey: ["admin-unrefunded-cancelled-orders", auth.token],
+    queryFn: () => listUnrefundedCancelledOrders(auth.authHeaders, { limit: 20 }),
+    enabled: auth.isAuthenticated,
+  });
+
+  const unrefundedOrders = unrefundedQuery.data?.items ?? [];
+  const unrefundedCount = unrefundedQuery.data?.totalCount ?? 0;
 
   const refunds = refundsQuery.data?.items ?? [];
 
@@ -149,6 +165,41 @@ export function AdminRefundsClient() {
     onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to adjust refund amount."),
   });
 
+  const reconcileBatchMutation = useMutation({
+    mutationFn: () =>
+      reconcilePendingRefunds(auth.authHeaders, {
+        autoInitiate: true,
+        note: "Batch reconciliation for cancelled orders",
+      }),
+    onSuccess: (result) => {
+      setNotice(
+        `Batch reconciliation completed: ${result.reconciledCount} order refund(s) created (${formatMoney(result.totalRefundedPaise, "INR")}).`
+      );
+      void queryClient.invalidateQueries({ queryKey: ["admin-refunds"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-unrefunded-cancelled-orders"] });
+    },
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to reconcile refunds."),
+  });
+
+  const reconcileSingleMutation = useMutation({
+    mutationFn: (orderNumber: string) =>
+      createRefundForOrder(auth.authHeaders, orderNumber, {
+        autoInitiate: true,
+        note: "Historical cancelled package reconciliation",
+      }),
+    onSuccess: (result) => {
+      setNotice(
+        `Order ${result.orderNumber} refund processed: ${result.refundNumber ?? "Created"} (${result.initiated ? "gateway refund initiated" : "pending finance review"}).`
+      );
+      void queryClient.invalidateQueries({ queryKey: ["admin-refunds"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-unrefunded-cancelled-orders"] });
+      if (result.refundNumber) {
+        setSelectedRefundNumber(result.refundNumber);
+      }
+    },
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to reconcile order refund."),
+  });
+
   const metrics = useMemo(() => refundMetrics(refunds), [refunds]);
 
   function handleRefundUpdated(detail: RefundDetail, message: string) {
@@ -161,6 +212,7 @@ export function AdminRefundsClient() {
     setSelectedRefundNumber(detail.refundNumber);
     void queryClient.invalidateQueries({ queryKey: ["admin-refunds"] });
     void queryClient.invalidateQueries({ queryKey: ["admin-refund-detail"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin-unrefunded-cancelled-orders"] });
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
@@ -174,7 +226,9 @@ export function AdminRefundsClient() {
     initiateMutation.isPending ||
     retryMutation.isPending ||
     manualMutation.isPending ||
-    adjustMutation.isPending;
+    adjustMutation.isPending ||
+    reconcileBatchMutation.isPending ||
+    reconcileSingleMutation.isPending;
 
   useEffect(() => {
     if (selectedDetail?.refundDestination?.method) {
@@ -183,13 +237,134 @@ export function AdminRefundsClient() {
   }, [selectedDetail?.refundDestination?.method]);
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <RefundMetricCard label="Loaded refunds" value={refunds.length} helper="Current filtered queue" tone="info" />
-        <RefundMetricCard label="Needs approval" value={metrics.review} helper="Finance decision needed" tone="warning" />
-        <RefundMetricCard label="Processing" value={metrics.processing} helper="Gateway or manual payment moving" tone="info" />
-        <RefundMetricCard label="Completed" value={metrics.completed} helper="Buyer refund posted" tone="success" />
-      </div>
+    <>
+      {confirmation.confirmationDialog}
+      <div className="space-y-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <RefundMetricCard label="Loaded refunds" value={refunds.length} helper="Current filtered queue" tone="info" />
+          <RefundMetricCard label="Needs approval" value={metrics.review} helper="Finance decision needed" tone="warning" />
+          <RefundMetricCard label="Processing" value={metrics.processing} helper="Gateway or manual payment moving" tone="info" />
+          <RefundMetricCard label="Completed" value={metrics.completed} helper="Buyer refund posted" tone="success" />
+          <RefundMetricCard
+            label="Unrefunded Cancelled"
+            value={unrefundedCount}
+            helper="Historical / Courier cancellations"
+            tone={unrefundedCount > 0 ? "warning" : "info"}
+          />
+        </div>
+
+        {unrefundedOrders.length > 0 ? (
+          <section className="overflow-hidden rounded-xl border border-[#F59E0B] bg-[#FFFBEB] p-5 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#FEF3C7] text-[#D97706]">
+                  <PackageX className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-[#92400E]">
+                      Historical Cancelled Packages Awaiting Customer Refund
+                    </h3>
+                    <StatusBadge tone="warning">
+                      {unrefundedCount} {unrefundedCount === 1 ? "Order" : "Orders"}
+                    </StatusBadge>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-[#B45309]">
+                    These paid orders have cancelled seller shipments (from seller cancellation, delivery rejection, or 3PL courier tracking) without an active customer refund.
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[#D97706] text-[#92400E] hover:bg-[#FEF3C7]"
+                  onClick={() => void unrefundedQuery.refetch()}
+                  disabled={unrefundedQuery.isFetching}
+                >
+                  <RefreshCw className={cn("h-4 w-4", unrefundedQuery.isFetching && "animate-spin")} />
+                  Scan
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-[#D97706] text-white hover:bg-[#B45309]"
+                  disabled={isBusy || unrefundedOrders.length === 0}
+                  onClick={() =>
+                    confirmation.requestConfirmation({
+                      title: "Reconcile All Cancelled Packages?",
+                      description: `This will create approved refund records for ${unrefundedCount} order(s), restock any unrestocked inventory, and automatically initiate Razorpay refunds for online payments.`,
+                      confirmLabel: "Reconcile All Now",
+                      tone: "warning",
+                      onConfirm: () => reconcileBatchMutation.mutate(),
+                    })
+                  }
+                >
+                  <History className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                  Reconcile All Online Refunds
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-4 divide-y divide-[#FDE68A] overflow-hidden rounded-lg border border-[#FDE68A] bg-white">
+              {unrefundedOrders.map((item) => {
+                const refundAmount = item.pendingRefundPaise || item.eligibleRefundPaise || item.totalPaise;
+                return (
+                  <div key={item.orderNumber} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/admin/orders/${item.orderNumber}`}
+                          className="font-black text-[#0B1F3A] hover:underline"
+                        >
+                          {item.orderNumber}
+                        </Link>
+                        <StatusBadge tone="danger">Cancelled</StatusBadge>
+                        <StatusBadge tone="success">{item.paymentStatus}</StatusBadge>
+                        {item.paymentProvider ? (
+                          <span className="rounded bg-[#F3F4F6] px-2 py-0.5 text-xs font-bold text-[#4B5563]">
+                            {item.paymentProvider}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-sm font-semibold text-[#667085]">
+                        {item.customer ? `${item.customer.name} (${item.customer.email})` : "Guest / Unknown"} • Refund Due:{" "}
+                        <strong className="text-[#0B1F3A]">{formatMoney(refundAmount, item.currency)}</strong>
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-[#78350F]">
+                        <span className="rounded bg-[#FEF3C7] px-2 py-1">
+                          {item.cancelledItemCount} of {item.totalItemCount} item(s) cancelled
+                          {item.cancelledAt ? ` • ${formatDateTime(item.cancelledAt)}` : ""}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-[#D97706] text-[#92400E] hover:bg-[#FEF3C7]"
+                        disabled={isBusy}
+                        onClick={() =>
+                          confirmation.requestConfirmation({
+                            title: `Process Refund for ${item.orderNumber}?`,
+                            description: `Create an approved refund record of ${formatMoney(refundAmount, item.currency)} and trigger online gateway refund if applicable.`,
+                            confirmLabel: "Create & Initiate Refund",
+                            tone: "warning",
+                            onConfirm: () => reconcileSingleMutation.mutate(item.orderNumber),
+                          })
+                        }
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                        Process Refund
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
       <section className="overflow-hidden rounded-xl border border-[#D8E2EA] bg-white shadow-sm">
         <div className="grid gap-3 border-b border-[#E5E7EB] p-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)_auto] xl:items-center">
@@ -307,6 +482,7 @@ export function AdminRefundsClient() {
         </div>
       </section>
     </div>
+    </>
   );
 }
 

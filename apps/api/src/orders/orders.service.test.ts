@@ -538,8 +538,224 @@ describe("OrdersService", () => {
         bookingError: null,
       },
     });
-    const updateData = tx.courierShipment.updateMany.mock.calls[0][0].data;
+    const updateData = tx.courierShipment.updateMany.mock.calls[0]?.[0]?.data;
     expect(updateData).not.toHaveProperty("deliveredAt");
+  });
+
+  it("cancels courier shipment and triggers automatic Razorpay refund when seller cancels package", async () => {
+    const courierLogisticsMock = {
+      cancelShipmentForSellerSplit: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const returnsServiceMock = {
+      processSellerSplitCancellation: vi.fn().mockResolvedValue({
+        cancellationLines: [{ orderItemId: "item_1", quantity: 1, grossPaise: 1000, buyerRefundPaise: 1000 }],
+        cancelledQuantity: 1,
+        cancelledGrossPaise: 1000,
+        buyerRefundPaise: 1000,
+        refundNumber: "REF-20261006-0001",
+        canAutoInitiateRazorpay: true,
+        allItemsCancelled: true,
+      }),
+      initiateRefund: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const taxDocumentsMock = {
+      cancelDraftOrderDocuments: vi.fn().mockResolvedValue([]),
+    };
+
+    const orderRecord = {
+      id: "ord_1",
+      orderNumber: "1HI-1001",
+      orderStatus: "CONFIRMED",
+      deliveryStatus: "PACKED",
+      paymentStatus: "PAID",
+      currency: "INR",
+      subtotalPaise: 1000,
+      totalPaise: 1000,
+      customerId: "cust_1",
+      customer: {
+        id: "cust_1",
+        userId: "cust_user_1",
+        user: { email: "customer@example.com", name: "Customer" },
+      },
+      items: [],
+      sellerCashReceivables: [],
+      statusEvents: [],
+      deliveryEvents: [],
+      sellerSplits: [
+        {
+          id: "split_1",
+          orderId: "ord_1",
+          sellerId: "seller_1",
+          sellerStatus: "PROCESSING",
+          sellerSubtotalPaise: 1000,
+          seller: { id: "seller_1", storeName: "Test Store", slug: "test-store" },
+          sellerCashReceivables: [],
+          shipment: null,
+        },
+      ],
+      shipments: [
+        {
+          id: "ship_1",
+          shipmentNumber: "SHP-001",
+          sellerId: "seller_1",
+          orderSellerSplitId: "split_1",
+          status: "PACKED",
+          deliveryMode: "THIRD_PARTY_COURIER",
+          subtotalPaise: 1000,
+          shippingPaise: 0,
+          codSurchargePaise: 0,
+          assignmentStatus: null,
+          packages: [],
+          courierShipments: [],
+          sellerCashReceivable: null,
+        },
+      ],
+      payments: [
+        {
+          id: "pay_1",
+          status: "PAID",
+          provider: "RAZORPAY",
+          method: "RAZORPAY",
+          amountPaise: 1000,
+          currency: "INR",
+          createdAt: new Date(),
+          providerPaymentId: "pay_123",
+        },
+      ],
+      deliveryDetail: {
+        id: "del_1",
+        status: "PACKED",
+        deliveryMode: "THIRD_PARTY_COURIER",
+        events: [],
+      },
+    };
+
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      order: {
+        findFirst: vi.fn().mockResolvedValue({ id: "ord_1" }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue(orderRecord),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderSellerSplit: {
+        findMany: vi.fn().mockResolvedValue(orderRecord.sellerSplits),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderShipment: {
+        findMany: vi.fn().mockResolvedValue(orderRecord.shipments),
+        findUnique: vi.fn().mockResolvedValue(orderRecord.shipments[0]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderShipmentPackage: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      payment: {
+        findMany: vi.fn().mockResolvedValue(orderRecord.payments),
+      },
+      deliveryDetail: {
+        findUnique: vi.fn().mockResolvedValue(orderRecord.deliveryDetail),
+        upsert: vi.fn().mockResolvedValue(orderRecord.deliveryDetail),
+      },
+      orderStatusEvent: {
+        create: vi.fn().mockResolvedValue({}),
+      },
+      deliveryEvent: {
+        create: vi.fn().mockResolvedValue({}),
+      },
+      courierShipment: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({}),
+      },
+    };
+
+    const prisma = {
+      client: {
+        ...tx,
+        seller: {
+          findUnique: vi.fn().mockResolvedValue({ id: "seller_1", userId: "user_1" }),
+          findFirst: vi.fn().mockResolvedValue({ id: "seller_1", userId: "user_1" }),
+        },
+        order: {
+          ...tx.order,
+          findUnique: vi.fn().mockResolvedValue({
+            ...orderRecord,
+            orderStatus: "CANCELLED",
+            deliveryStatus: "CANCELLED",
+            paymentStatus: "REFUNDED",
+            items: [],
+          }),
+          findUniqueOrThrow: vi.fn().mockResolvedValue({
+            ...orderRecord,
+            orderStatus: "CANCELLED",
+            deliveryStatus: "CANCELLED",
+            paymentStatus: "REFUNDED",
+            items: [],
+          }),
+        },
+        $transaction: vi.fn().mockImplementation((callback) => callback(tx)),
+      },
+    };
+
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      { notifyEvent: vi.fn().mockResolvedValue({}) } as never,
+      { notifyCustomer: vi.fn().mockResolvedValue({}) } as never,
+      undefined as never,
+      taxDocumentsMock as never,
+      undefined as never,
+      courierLogisticsMock as never,
+      returnsServiceMock as never,
+    );
+
+    await service.updateSellerOrderStatus(
+      { id: "user_1" } as never,
+      "1HI-1001",
+      { sellerStatus: "CANCELLED" as never, note: "Inventory shortage" },
+    );
+
+    // Verified: ReturnsService processed split cancellation
+    expect(returnsServiceMock.processSellerSplitCancellation).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        orderId: "ord_1",
+        sellerId: "seller_1",
+        orderSellerSplitId: "split_1",
+        note: "Inventory shortage",
+      }),
+    );
+
+    // Verified: Shiprocket courier shipment cancellation called
+    expect(courierLogisticsMock.cancelShipmentForSellerSplit).toHaveBeenCalledWith(
+      "split_1",
+      "user_1",
+    );
+
+    // Verified: Automatic Razorpay refund initiated
+    expect(returnsServiceMock.initiateRefund).toHaveBeenCalledWith(
+      { id: "user_1" },
+      "REF-20261006-0001",
+      expect.objectContaining({
+        method: "RAZORPAY",
+      }),
+    );
+
+    // Verified: Draft tax documents cancelled
+    expect(taxDocumentsMock.cancelDraftOrderDocuments).toHaveBeenCalledWith(
+      tx,
+      "ord_1",
+      "Inventory shortage",
+    );
   });
 });
 

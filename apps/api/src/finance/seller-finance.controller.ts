@@ -4,7 +4,7 @@ import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { SellerCashReceivableActionDto, SellerCashReceivableQueryDto, FinanceListQueryDto, PayoutQueryDto, SellerPayoutRequestDto } from "./dto/finance.dto";
+import { FinanceListQueryDto, PayoutQueryDto, SellerPayoutRequestDto } from "./dto/finance.dto";
 import { SellerCashReceivablesService } from "./seller-cash-receivables.service";
 import { SellerFinanceAccessService } from "./seller-finance-access.service";
 import { SellerLedgerService } from "./seller-ledger.service";

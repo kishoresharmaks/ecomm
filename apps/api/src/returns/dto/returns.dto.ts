@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsIn,
@@ -457,3 +458,45 @@ export class ReversePickupListQueryDto extends ReturnListQueryDto {
   @IsEnum(DeliveryAssignmentStatus)
   assignmentStatus?: DeliveryAssignmentStatus;
 }
+
+export class UnrefundedCancelledOrdersQueryDto {
+  @ApiPropertyOptional({ default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+export class ReconcileRefundsDto {
+  @ApiPropertyOptional({ default: true, description: "Whether to auto-initiate Razorpay refund if paid online." })
+  @IsOptional()
+  @IsBoolean()
+  autoInitiate?: boolean;
+
+  @ApiPropertyOptional({ example: "Batch reconciliation for cancelled orders." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class CreateOrderRefundDto {
+  @ApiPropertyOptional({ default: true, description: "Whether to auto-initiate Razorpay refund if paid online." })
+  @IsOptional()
+  @IsBoolean()
+  autoInitiate?: boolean;
+
+  @ApiPropertyOptional({ example: "Reconcile refund for historical cancelled package." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
