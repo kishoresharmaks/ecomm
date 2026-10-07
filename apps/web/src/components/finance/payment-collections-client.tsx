@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Search, XCircle } from "lucide-react";
@@ -145,6 +146,7 @@ export function PaymentCollectionsClient({ mode = "ALL" }: { mode?: PaymentColle
             <option value="">All payment statuses</option>
             <option value="PENDING">Pending</option>
             <option value="PAID">Paid</option>
+            <option value="REFUNDED">Refunded</option>
             <option value="FAILED">Failed</option>
             <option value="NOT_REQUIRED">Not required</option>
           </select>
@@ -282,27 +284,59 @@ function PaymentCollectionRow({
   const canVerifyOffline = isOffline && payment.status === "PENDING";
   const canAct = canVerifyCod || canVerifyOffline;
 
+  const effectiveStatus = payment.effectiveStatus || payment.status;
+  const isRefunded = effectiveStatus === "REFUNDED" || payment.status === "REFUNDED";
+  const isRefundPending = effectiveStatus === "REFUND_APPROVED" || effectiveStatus === "REFUND_PENDING";
+  const isCancelled = payment.isCancelled || payment.order.orderStatus === "CANCELLED";
+  const refundAmount = payment.refundAmountPaise ?? payment.order.refundAmountPaise ?? 0;
+  const refundStatus = payment.refundStatus ?? payment.order.refundStatus ?? null;
+
   return (
-    <article className="grid gap-4 px-4 py-4 xl:grid-cols-[1.1fr_0.9fr_1fr_auto] xl:items-center">
+    <article className={cn("grid gap-4 px-4 py-4 xl:grid-cols-[1.1fr_0.9fr_1fr_auto] xl:items-center", (isCancelled || isRefunded) && "bg-[#FEF2F2]/25")}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-lg font-black text-[#163B5C]">{payment.order.orderNumber}</p>
-          <StatusBadge tone={payment.status === "PAID" ? "success" : payment.status === "FAILED" ? "danger" : "warning"}>{payment.status}</StatusBadge>
+          <StatusBadge tone={isRefunded ? "danger" : isRefundPending ? "warning" : payment.status === "PAID" ? "success" : payment.status === "FAILED" ? "danger" : "warning"}>
+            {isRefunded ? "REFUNDED" : isRefundPending ? effectiveStatus.replace("_", " ") : isCancelled ? "CANCELLED" : payment.status}
+          </StatusBadge>
           <StatusBadge tone="info">{payment.provider.replace("_", " ")}</StatusBadge>
+          {refundAmount > 0 && !isRefunded && (
+            <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-xs font-black text-[#DC2626]">
+              Refund Pending: {money(refundAmount, payment.currency)}
+            </span>
+          )}
         </div>
         <p className="mt-1 text-sm font-semibold text-[#667085]">
           {payment.order.customer.fullName ?? payment.order.customer.email ?? "Customer"} / {new Date(payment.order.createdAt).toLocaleString("en-IN")}
         </p>
-        <p className="mt-2 text-xl font-black text-[#1F2933]">{money(payment.amountPaise, payment.currency)}</p>
+        {isRefunded || isCancelled ? (
+          <div className="mt-2 flex flex-wrap items-baseline gap-2">
+            <span className="text-lg font-bold text-[#98A2B3] line-through">{money(payment.amountPaise, payment.currency)}</span>
+            {refundAmount > 0 && (
+              <span className="text-sm font-black text-[#DC2626]">- {money(refundAmount, payment.currency)} Refunded</span>
+            )}
+            <span className="text-sm font-bold text-[#0B1F3A]">Net: {money(Math.max(0, payment.amountPaise - refundAmount), payment.currency)}</span>
+          </div>
+        ) : (
+          <p className="mt-2 text-xl font-black text-[#1F2933]">{money(payment.amountPaise, payment.currency)}</p>
+        )}
       </div>
 
       <div className="grid gap-1 text-sm font-semibold text-[#667085]">
         <p>
-          Order: <span className="font-black text-[#1F2933]">{payment.order.orderStatus}</span>
+          Order: <span className={cn("font-black", isCancelled ? "text-[#DC2626]" : "text-[#1F2933]")}>{payment.order.orderStatus}</span>
         </p>
         <p>
           Delivery: <span className="font-black text-[#1F2933]">{payment.order.deliveryStatus}</span>
         </p>
+        {refundAmount > 0 ? (
+          <p className="flex items-center gap-1.5">
+            Refund: <span className="font-bold text-[#DC2626]">{refundStatus ?? (isRefunded ? "PROCESSED" : "PENDING")}</span>
+            <Link href={`/finance/refunds?search=${payment.order.orderNumber}`} className="ml-1 text-xs font-bold text-[#ED3500] underline">
+              View Refund
+            </Link>
+          </p>
+        ) : null}
         {hasSellerCollectedCod ? (
           <>
             <p>

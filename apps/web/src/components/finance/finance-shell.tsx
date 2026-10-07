@@ -166,6 +166,9 @@ export function FinanceShell({
                   <Button asChild variant="outline">
                     <Link href="/finance/bank-transfers">Bank transfers</Link>
                   </Button>
+                  <Button asChild variant="outline">
+                    <Link href="/finance/refunds">Refunds</Link>
+                  </Button>
                   <Button asChild>
                     <Link href="/finance/payouts">Payouts</Link>
                   </Button>

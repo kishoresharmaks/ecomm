@@ -177,6 +177,8 @@ export function AdminRefundsClient() {
       );
       void queryClient.invalidateQueries({ queryKey: ["admin-refunds"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-unrefunded-cancelled-orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-payment-collections"] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to reconcile refunds."),
   });
@@ -193,6 +195,8 @@ export function AdminRefundsClient() {
       );
       void queryClient.invalidateQueries({ queryKey: ["admin-refunds"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-unrefunded-cancelled-orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-payment-collections"] });
       if (result.refundNumber) {
         setSelectedRefundNumber(result.refundNumber);
       }
@@ -213,6 +217,8 @@ export function AdminRefundsClient() {
     void queryClient.invalidateQueries({ queryKey: ["admin-refunds"] });
     void queryClient.invalidateQueries({ queryKey: ["admin-refund-detail"] });
     void queryClient.invalidateQueries({ queryKey: ["admin-unrefunded-cancelled-orders"] });
+    void queryClient.invalidateQueries({ queryKey: ["finance-dashboard"] });
+    void queryClient.invalidateQueries({ queryKey: ["finance-payment-collections"] });
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {

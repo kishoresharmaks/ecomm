@@ -13,6 +13,8 @@ export type FinanceDashboard = {
     bankTransferPending: FinanceMetric;
     manualPending: FinanceMetric;
     onlinePaid: FinanceMetric;
+    refundsPending?: FinanceMetric;
+    refundsPaid?: FinanceMetric;
     settlementDue: FinanceMetric;
     payoutPending: FinanceMetric;
     payoutPaid: FinanceMetric;
@@ -30,6 +32,11 @@ export type FinancePaymentCollection = {
   provider: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
   method?: string | null;
   status: "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
+  effectiveStatus?: string;
+  isCancelled?: boolean;
+  refundAmountPaise?: number;
+  refundStatus?: string | null;
+  refundNumber?: string | null;
   amountPaise: number;
   currency: string;
   providerPaymentId?: string | null;
@@ -47,6 +54,17 @@ export type FinancePaymentCollection = {
     totalPaise: number;
     currency: string;
     createdAt: string;
+    refundRequests?: Array<{
+      id: string;
+      refundNumber: string;
+      status: string;
+      reason: string;
+      amountPaise: number;
+      approvedAmountPaise: number;
+      createdAt: string;
+    }>;
+    refundAmountPaise?: number;
+    refundStatus?: string | null;
     customer: {
       email?: string | null;
       phone?: string | null;

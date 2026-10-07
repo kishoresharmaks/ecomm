@@ -2565,6 +2565,22 @@ export class ReturnsService {
     const pendingRefundPaise = Math.max(0, eligibleRefundPaise - existingRefundedPaise);
 
     if (pendingRefundPaise <= 0) {
+      const hasSuccessfulRefund = order.refundRequests.some(
+        (r) => r.status === RefundRequestStatus.SUCCESS,
+      );
+      if (hasSuccessfulRefund && order.orderStatus === OrderStatus.CANCELLED) {
+        await this.prisma.client.payment.updateMany({
+          where: { orderId: order.id, status: PaymentStatus.PAID },
+          data: { status: PaymentStatus.REFUNDED },
+        });
+        if (order.paymentStatus === PaymentStatus.PAID) {
+          await this.prisma.client.order.update({
+            where: { id: order.id },
+            data: { paymentStatus: PaymentStatus.REFUNDED },
+          });
+        }
+      }
+
       return {
         orderNumber,
         reconciled: false,
@@ -4590,27 +4606,63 @@ export class ReturnsService {
         Math.max(
           this.activeQuantity(item) -
             refund.items
-              .filter((refundItem) => refundItem.orderItemId === item.id && refundItem.returnRequestItemId)
+              .filter((refundItem) => refundItem.orderItemId === item.id)
               .reduce((itemSum, refundItem) => itemSum + refundItem.quantity, 0),
           0,
         ),
       0,
     );
-    if (remainingActiveQuantity === 0 && refund.order.paymentStatus === PaymentStatus.PAID) {
-      await tx.order.update({
-        where: { id: refund.orderId },
-        data: { paymentStatus: PaymentStatus.REFUNDED },
-      });
-      await tx.orderStatusEvent.create({
-        data: {
+    const isOrderCancelledOrRefunded =
+      remainingActiveQuantity === 0 ||
+      refund.order.orderStatus === OrderStatus.CANCELLED ||
+      refund.order.items.every(
+        (item) => item.activeQuantity === 0 || item.cancelledQuantity >= item.quantity,
+      );
+
+    if (isOrderCancelledOrRefunded) {
+      if (refund.order.paymentStatus === PaymentStatus.PAID) {
+        await tx.order.update({
+          where: { id: refund.orderId },
+          data: { paymentStatus: PaymentStatus.REFUNDED },
+        });
+        await tx.orderStatusEvent.create({
+          data: {
+            orderId: refund.orderId,
+            statusType: StatusEventType.PAYMENT,
+            oldStatus: PaymentStatus.PAID,
+            newStatus: PaymentStatus.REFUNDED,
+            note: options.note,
+            createdById: actor?.id ?? null,
+          },
+        });
+      }
+      await tx.payment.updateMany({
+        where: {
           orderId: refund.orderId,
-          statusType: StatusEventType.PAYMENT,
-          oldStatus: PaymentStatus.PAID,
-          newStatus: PaymentStatus.REFUNDED,
-          note: options.note,
-          createdById: actor?.id ?? null,
+          status: PaymentStatus.PAID,
+        },
+        data: {
+          status: PaymentStatus.REFUNDED,
         },
       });
+    } else if (refund.paymentId) {
+      const totalRefundedForPayment = await tx.refundRequest.aggregate({
+        where: {
+          paymentId: refund.paymentId,
+          status: RefundRequestStatus.SUCCESS,
+        },
+        _sum: { amountPaise: true },
+      });
+      const payment = await tx.payment.findUnique({
+        where: { id: refund.paymentId },
+        select: { amountPaise: true },
+      });
+      if (payment && (totalRefundedForPayment._sum.amountPaise ?? 0) >= payment.amountPaise) {
+        await tx.payment.update({
+          where: { id: refund.paymentId },
+          data: { status: PaymentStatus.REFUNDED },
+        });
+      }
     }
 
     await tx.auditLog.create({

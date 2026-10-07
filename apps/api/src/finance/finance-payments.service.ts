@@ -7,6 +7,7 @@ import {
   PaymentProvider,
   PaymentStatus,
   Prisma,
+  RefundRequestStatus,
   ServiceSellerReceivableStatus,
   SellerCashReceivableStatus,
   SellerOrderStatus,
@@ -49,6 +50,8 @@ export class FinancePaymentsService {
       bankTransferPending,
       manualPending,
       onlinePaid,
+      refundsPending,
+      refundsPaid,
       settlementDue,
       payoutPending,
       payoutPaid,
@@ -75,7 +78,9 @@ export class FinancePaymentsService {
         status: PaymentStatus.PENDING,
       }),
       this.paymentMetric({ provider: PaymentProvider.MANUAL, status: PaymentStatus.PENDING }),
-      this.paymentMetric({ provider: PaymentProvider.RAZORPAY, status: PaymentStatus.PAID }),
+      this.onlinePaidMetric(),
+      this.refundsPendingMetric(),
+      this.refundsPaidMetric(),
       this.eligibleSettlementDueMetric(),
       this.prisma.client.sellerPayout.aggregate({
         where: {
@@ -145,6 +150,8 @@ export class FinancePaymentsService {
         bankTransferPending,
         manualPending,
         onlinePaid,
+        refundsPending,
+        refundsPaid,
         settlementDue,
         payoutPending: this.aggregateMetric(
           payoutPending._count._all,
@@ -538,6 +545,105 @@ export class FinancePaymentsService {
       .then((result) => this.aggregateMetric(result._count._all, result._sum.amountPaise));
   }
 
+  private async onlinePaidMetric() {
+    const payments = await this.prisma.client.payment.findMany({
+      where: {
+        provider: PaymentProvider.RAZORPAY,
+        status: PaymentStatus.PAID,
+      },
+      select: {
+        amountPaise: true,
+        order: {
+          select: {
+            orderStatus: true,
+            paymentStatus: true,
+            sellerSplits: {
+              select: { sellerStatus: true },
+            },
+            refundRequests: {
+              where: {
+                status: { not: RefundRequestStatus.CANCELLED },
+              },
+              select: {
+                status: true,
+                amountPaise: true,
+                approvedAmountPaise: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let count = 0;
+    let amountPaise = 0;
+
+    for (const payment of payments) {
+      const isOrderCancelled =
+        payment.order.orderStatus === OrderStatus.CANCELLED ||
+        payment.order.paymentStatus === PaymentStatus.REFUNDED ||
+        (payment.order.sellerSplits.length > 0 &&
+          payment.order.sellerSplits.every(
+            (s) => s.sellerStatus === SellerOrderStatus.CANCELLED,
+          ));
+
+      const totalRefundedOrApproved = payment.order.refundRequests.reduce(
+        (sum, r) =>
+          sum +
+          (r.status === RefundRequestStatus.SUCCESS
+            ? r.amountPaise
+            : r.approvedAmountPaise > 0
+              ? r.approvedAmountPaise
+              : r.amountPaise),
+        0,
+      );
+
+      // Exclude cancelled or fully refunded orders from active online paid
+      if (isOrderCancelled) {
+        continue;
+      }
+
+      const netAmount = Math.max(0, payment.amountPaise - totalRefundedOrApproved);
+      if (netAmount > 0) {
+        count += 1;
+        amountPaise += netAmount;
+      }
+    }
+
+    return this.aggregateMetric(count, amountPaise);
+  }
+
+  private async refundsPendingMetric() {
+    const agg = await this.prisma.client.refundRequest.aggregate({
+      where: {
+        status: {
+          in: [
+            RefundRequestStatus.PENDING_REVIEW,
+            RefundRequestStatus.APPROVED,
+            RefundRequestStatus.PROCESSING,
+            RefundRequestStatus.RETRY_PENDING,
+          ],
+        },
+      },
+      _count: { _all: true },
+      _sum: { amountPaise: true },
+    });
+
+    return this.aggregateMetric(agg._count._all, agg._sum.amountPaise);
+  }
+
+  private async refundsPaidMetric() {
+    const agg = await this.prisma.client.refundRequest.aggregate({
+      where: {
+        status: RefundRequestStatus.SUCCESS,
+      },
+      _count: { _all: true },
+      _sum: { amountPaise: true },
+    });
+
+    return this.aggregateMetric(agg._count._all, agg._sum.amountPaise);
+  }
+
   private async codPendingMetric() {
     const payments = await this.prisma.client.payment.findMany({
       where: {
@@ -724,9 +830,35 @@ export class FinancePaymentsService {
       ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
     };
 
+    const statusCondition: Prisma.PaymentWhereInput = query.paymentStatus
+      ? query.paymentStatus === PaymentStatus.REFUNDED
+        ? {
+            OR: [
+              { status: PaymentStatus.REFUNDED },
+              { order: { paymentStatus: PaymentStatus.REFUNDED } },
+              {
+                order: {
+                  refundRequests: {
+                    some: { status: RefundRequestStatus.SUCCESS },
+                  },
+                },
+              },
+            ],
+          }
+        : query.paymentStatus === PaymentStatus.PAID
+          ? {
+              status: PaymentStatus.PAID,
+              order: {
+                orderStatus: { not: OrderStatus.CANCELLED },
+                paymentStatus: { not: PaymentStatus.REFUNDED },
+              },
+            }
+          : { status: query.paymentStatus }
+      : {};
+
     return {
       ...(query.provider ? { provider: query.provider } : {}),
-      ...(query.paymentStatus ? { status: query.paymentStatus } : {}),
+      ...statusCondition,
       ...(Object.keys(createdAt).length ? { createdAt } : {}),
       ...(search
         ? {
@@ -786,6 +918,20 @@ export class FinancePaymentsService {
               orderShipment: true,
             },
           },
+          refundRequests: {
+            where: {
+              status: { not: RefundRequestStatus.CANCELLED },
+            },
+            select: {
+              id: true,
+              refundNumber: true,
+              status: true,
+              reason: true,
+              amountPaise: true,
+              approvedAmountPaise: true,
+              createdAt: true,
+            },
+          },
         },
       },
     };
@@ -796,11 +942,54 @@ export class FinancePaymentsService {
       include: ReturnType<FinancePaymentsService["paymentCollectionInclude"]>;
     }>,
   ) {
+    const refundRequests = payment.order.refundRequests ?? [];
+    const isCancelled =
+      payment.order.orderStatus === OrderStatus.CANCELLED ||
+      (payment.order.sellerSplits.length > 0 &&
+        payment.order.sellerSplits.every(
+          (split) => split.sellerStatus === SellerOrderStatus.CANCELLED,
+        ));
+
+    const totalRefundPaise = refundRequests.reduce(
+      (sum, r) =>
+        sum +
+        (r.status === RefundRequestStatus.SUCCESS
+          ? r.amountPaise
+          : r.approvedAmountPaise > 0
+            ? r.approvedAmountPaise
+            : r.amountPaise),
+      0,
+    );
+    const activeRefund = refundRequests[0];
+
+    let effectiveStatus: string = payment.status;
+    if (
+      payment.status === PaymentStatus.REFUNDED ||
+      payment.order.paymentStatus === PaymentStatus.REFUNDED ||
+      refundRequests.some((r) => r.status === RefundRequestStatus.SUCCESS)
+    ) {
+      effectiveStatus = "REFUNDED";
+    } else if (isCancelled && activeRefund) {
+      effectiveStatus =
+        activeRefund.status === RefundRequestStatus.APPROVED
+          ? "REFUND_APPROVED"
+          : "REFUND_PENDING";
+    } else if (isCancelled && payment.status === PaymentStatus.PAID) {
+      effectiveStatus = "CANCELLED";
+    } else if (activeRefund && activeRefund.status === RefundRequestStatus.APPROVED) {
+      effectiveStatus = "REFUND_APPROVED";
+    }
+
     return {
       id: payment.id,
       provider: payment.provider,
       method: payment.method,
       status: payment.status,
+      effectiveStatus,
+      isCancelled,
+      refundAmountPaise: totalRefundPaise,
+      refundStatus: activeRefund?.status ?? (effectiveStatus === "REFUNDED" ? "SUCCESS" : null),
+      refundNumber: activeRefund?.refundNumber ?? null,
       amountPaise: payment.amountPaise,
       currency: payment.currency,
       providerPaymentId: payment.providerPaymentId,
@@ -818,6 +1007,17 @@ export class FinancePaymentsService {
         totalPaise: payment.order.totalPaise,
         currency: payment.order.currency,
         createdAt: payment.order.createdAt,
+        refundRequests: refundRequests.map((r) => ({
+          id: r.id,
+          refundNumber: r.refundNumber,
+          status: r.status,
+          reason: r.reason,
+          amountPaise: r.amountPaise,
+          approvedAmountPaise: r.approvedAmountPaise,
+          createdAt: r.createdAt.toISOString(),
+        })),
+        refundAmountPaise: totalRefundPaise,
+        refundStatus: activeRefund?.status ?? (effectiveStatus === "REFUNDED" ? "SUCCESS" : null),
         customer: {
           email: payment.order.customer.user.email,
           phone: payment.order.customer.user.phone,
