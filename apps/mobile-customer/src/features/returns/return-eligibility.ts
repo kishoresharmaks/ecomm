@@ -178,19 +178,30 @@ export function returnWindowState(
 
 export function orderReturnPolicyState(
   order: ReturnWindowOrder,
-  _settings: MobileReturnPolicySettings = defaultMobileReturnPolicySettings,
+  settings: MobileReturnPolicySettings = defaultMobileReturnPolicySettings,
   now = new Date(),
 ) {
   // Use per-item product policies rather than global settings so non-returnable
   // products correctly show as unavailable at the order level.
-  const refundWindow = (order.items ?? []).reduce(
-    (acc, item) => Math.max(acc, mobileItemReturnPolicy(item).returnWindowDays),
-    0,
+  // Fall back to order return settings if items do not provide an explicit policy snapshot.
+  const hasItemPolicy = (order.items ?? []).some(
+    (item) => item.returnPolicySnapshot?.returnEligibility != null,
   );
-  const replacementWindow = (order.items ?? []).reduce(
-    (acc, item) => Math.max(acc, mobileItemReturnPolicy(item).replacementWindowDays),
-    0,
-  );
+
+  const refundWindow = hasItemPolicy
+    ? (order.items ?? []).reduce(
+        (acc, item) => Math.max(acc, mobileItemReturnPolicy(item).returnWindowDays),
+        0,
+      )
+    : settings.returnWindowDays;
+
+  const replacementWindow = hasItemPolicy
+    ? (order.items ?? []).reduce(
+        (acc, item) => Math.max(acc, mobileItemReturnPolicy(item).replacementWindowDays),
+        0,
+      )
+    : settings.replacementWindowDays;
+
   return {
     refund: returnWindowState(order, refundWindow, now),
     replacement: returnWindowState(order, replacementWindow, now),

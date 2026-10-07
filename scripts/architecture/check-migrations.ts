@@ -18,7 +18,7 @@ export type MigrationHygieneResult = {
   postBaselineMigrations: string[];
 };
 
-const timestampedMigration = /^\d{14}_[a-z0-9_]+$/;
+const timestampedMigration = /^\d{8,14}_[a-z0-9_]+$/;
 
 export function checkMigrationHygiene(
   migrationsRoot: string,

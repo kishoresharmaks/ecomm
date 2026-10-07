@@ -318,6 +318,11 @@
     },
     {
       "from": "identity-access",
+      "to": "composition",
+      "count": 1
+    },
+    {
+      "from": "identity-access",
       "to": "location-routing",
       "count": 2
     },
@@ -344,7 +349,7 @@
     {
       "from": "order-management",
       "to": "finance-tax",
-      "count": 16
+      "count": 17
     },
     {
       "from": "order-management",
@@ -384,7 +389,7 @@
     {
       "from": "seller-management",
       "to": "identity-access",
-      "count": 24
+      "count": 26
     },
     {
       "from": "seller-management",

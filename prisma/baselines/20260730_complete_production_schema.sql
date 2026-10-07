@@ -10160,3 +10160,255 @@ CREATE TABLE "cms_popup_announcements" (
 CREATE INDEX "cms_popup_announcements_starts_at_idx" ON "cms_popup_announcements"("starts_at");
 CREATE INDEX "cms_popup_announcements_ends_at_idx" ON "cms_popup_announcements"("ends_at");
 CREATE INDEX "cms_popup_announcements_status_sort_order_idx" ON "cms_popup_announcements"("status", "sort_order");
+
+-- Migration: 20260909120000_add_newsletter_subscriber
+-- CreateTable
+CREATE TABLE "newsletter_subscribers" (
+    "email" VARCHAR(320) NOT NULL,
+    "name" VARCHAR(200),
+    "status" VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    "source" VARCHAR(50) NOT NULL DEFAULT 'footer',
+    "subscribed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "unsubscribed_at" TIMESTAMP(3),
+    "ip_address" VARCHAR(45),
+    "user_agent" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "newsletter_subscribers_pkey" PRIMARY KEY ("email")
+);
+
+-- CreateIndex
+CREATE INDEX "newsletter_subscribers_status_subscribed_at_idx" ON "newsletter_subscribers"("status", "subscribed_at");
+
+-- CreateIndex
+CREATE INDEX "newsletter_subscribers_source_idx" ON "newsletter_subscribers"("source");
+
+-- Migration: 20260912_b2b_schema_changes
+-- B2B Order-to-Cash V2 schema changes.
+-- Generated from unapplied schema changes blocked by a broken prior migration.
+-- Apply with: psql <connection-string> -f prisma/migrations/20260912_b2b_schema_changes/migration.sql
+
+-- 1. Add CANCELLED to B2BPaymentStatus enum
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_enum
+    WHERE enumlabel = 'CANCELLED'
+      AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'B2BPaymentStatus')
+  ) THEN
+    ALTER TYPE "B2BPaymentStatus" ADD VALUE 'CANCELLED';
+  END IF;
+END $$;
+
+-- 2. Add CANCEL_ORDER and UPDATE_ORDER_STATUS to B2BAdminAction enum
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_enum
+    WHERE enumlabel = 'CANCEL_ORDER'
+      AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'B2BAdminAction')
+  ) THEN
+    ALTER TYPE "B2BAdminAction" ADD VALUE 'CANCEL_ORDER';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_enum
+    WHERE enumlabel = 'UPDATE_ORDER_STATUS'
+      AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'B2BAdminAction')
+  ) THEN
+    ALTER TYPE "B2BAdminAction" ADD VALUE 'UPDATE_ORDER_STATUS';
+  END IF;
+END $$;
+
+-- 3. Add composite unique index on B2BOrder(sellerId, taxInvoiceNumber)
+-- Uses IF NOT EXISTS so re-running this migration is safe.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_b2b_orders_seller_tax_invoice
+ON b2b_orders (seller_id, tax_invoice_number)
+WHERE tax_invoice_number IS NOT NULL;
+
+-- 4. Change BusinessBuyer.user FK from CASCADE to SET NULL
+-- Drop old constraint and recreate with SET NULL.
+DO $$
+DECLARE
+  constraint_name text;
+BEGIN
+  SELECT conname INTO constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'business_buyers'::regclass
+    AND confrelid = 'users'::regclass
+    AND contype = 'f'
+    AND conkey @> ARRAY[
+      (SELECT attnum FROM pg_attribute WHERE attrelid = 'business_buyers'::regclass AND attname = 'user_id')
+    ]::smallint[]
+  LIMIT 1;
+
+  IF constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE business_buyers DROP CONSTRAINT %I', constraint_name);
+  END IF;
+
+  EXECUTE $inner$
+    ALTER TABLE business_buyers
+    ADD CONSTRAINT business_buyers_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+  $inner$;
+END $$;
+
+-- 5. Change B2BOrder.businessBuyer FK from CASCADE to RESTRICT
+DO $$
+DECLARE
+  constraint_name text;
+BEGIN
+  SELECT conname INTO constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'b2b_orders'::regclass
+    AND confrelid = 'business_buyers'::regclass
+    AND contype = 'f'
+  LIMIT 1;
+
+  IF constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE b2b_orders DROP CONSTRAINT %I', constraint_name);
+  END IF;
+
+  EXECUTE $inner$
+    ALTER TABLE b2b_orders
+    ADD CONSTRAINT b2b_orders_business_buyer_id_fkey
+    FOREIGN KEY (business_buyer_id) REFERENCES business_buyers(id) ON DELETE RESTRICT
+  $inner$;
+END $$;
+
+-- 6. Change B2BPaymentProof.order FK from CASCADE to RESTRICT
+DO $$
+DECLARE
+  constraint_name text;
+BEGIN
+  SELECT conname INTO constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'b2b_payment_proofs'::regclass
+    AND confrelid = 'b2b_orders'::regclass
+    AND contype = 'f'
+  LIMIT 1;
+
+  IF constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE b2b_payment_proofs DROP CONSTRAINT %I', constraint_name);
+  END IF;
+
+  EXECUTE $inner$
+    ALTER TABLE b2b_payment_proofs
+    ADD CONSTRAINT b2b_payment_proofs_b2b_order_id_fkey
+    FOREIGN KEY (b2b_order_id) REFERENCES b2b_orders(id) ON DELETE RESTRICT
+  $inner$;
+END $$;
+
+-- 7. Change B2BOrderAmendment.order FK from CASCADE to RESTRICT
+DO $$
+DECLARE
+  constraint_name text;
+BEGIN
+  SELECT conname INTO constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'b2b_order_amendments'::regclass
+    AND confrelid = 'b2b_orders'::regclass
+    AND contype = 'f'
+  LIMIT 1;
+
+  IF constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE b2b_order_amendments DROP CONSTRAINT %I', constraint_name);
+  END IF;
+
+  EXECUTE $inner$
+    ALTER TABLE b2b_order_amendments
+    ADD CONSTRAINT b2b_order_amendments_b2b_order_id_fkey
+    FOREIGN KEY (b2b_order_id) REFERENCES b2b_orders(id) ON DELETE RESTRICT
+  $inner$;
+END $$;
+
+-- 8. Change B2BDisputeResolution.order FK from CASCADE to RESTRICT
+DO $$
+DECLARE
+  constraint_name text;
+BEGIN
+  SELECT conname INTO constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'b2b_dispute_resolutions'::regclass
+    AND confrelid = 'b2b_orders'::regclass
+    AND contype = 'f'
+  LIMIT 1;
+
+  IF constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE b2b_dispute_resolutions DROP CONSTRAINT %I', constraint_name);
+  END IF;
+
+  EXECUTE $inner$
+    ALTER TABLE b2b_dispute_resolutions
+    ADD CONSTRAINT b2b_dispute_resolutions_b2b_order_id_fkey
+    FOREIGN KEY (b2b_order_id) REFERENCES b2b_orders(id) ON DELETE RESTRICT
+  $inner$;
+END $$;
+
+-- 9. Change B2BFinancialReconciliation.order FK from CASCADE to RESTRICT
+DO $$
+DECLARE
+  constraint_name text;
+BEGIN
+  SELECT conname INTO constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'b2b_financial_reconciliations'::regclass
+    AND confrelid = 'b2b_orders'::regclass
+    AND contype = 'f'
+  LIMIT 1;
+
+  IF constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE b2b_financial_reconciliations DROP CONSTRAINT %I', constraint_name);
+  END IF;
+
+  EXECUTE $inner$
+    ALTER TABLE b2b_financial_reconciliations
+    ADD CONSTRAINT b2b_financial_reconciliations_b2b_order_id_fkey
+    FOREIGN KEY (b2b_order_id) REFERENCES b2b_orders(id) ON DELETE RESTRICT
+  $inner$;
+END $$;
+
+-- Migration: 20261007200000_add_admin_mfa
+-- Add Admin TOTP MFA and recovery codes
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AdminMfaType') THEN
+    CREATE TYPE "AdminMfaType" AS ENUM ('NONE', 'TOTP');
+  END IF;
+END $$;
+
+ALTER TABLE "admin_credentials" ADD COLUMN IF NOT EXISTS "mfa_enabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "admin_credentials" ADD COLUMN IF NOT EXISTS "mfa_type" "AdminMfaType" NOT NULL DEFAULT 'NONE';
+ALTER TABLE "admin_credentials" ADD COLUMN IF NOT EXISTS "mfa_secret_encrypted" TEXT;
+ALTER TABLE "admin_credentials" ADD COLUMN IF NOT EXISTS "mfa_enforced_at" TIMESTAMP(3);
+ALTER TABLE "admin_credentials" ADD COLUMN IF NOT EXISTS "failed_mfa_attempts" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "admin_credentials" ADD COLUMN IF NOT EXISTS "mfa_locked_until" TIMESTAMP(3);
+
+CREATE INDEX IF NOT EXISTS "admin_credentials_mfa_locked_until_idx" ON "admin_credentials"("mfa_locked_until");
+
+CREATE TABLE IF NOT EXISTS "admin_mfa_recovery_codes" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "credential_id" UUID NOT NULL,
+    "code_hash" TEXT NOT NULL,
+    "used_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "admin_mfa_recovery_codes_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "admin_mfa_recovery_codes_credential_id_used_at_idx" ON "admin_mfa_recovery_codes"("credential_id", "used_at");
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'admin_mfa_recovery_codes_credential_id_fkey'
+  ) THEN
+    ALTER TABLE "admin_mfa_recovery_codes"
+      ADD CONSTRAINT "admin_mfa_recovery_codes_credential_id_fkey"
+      FOREIGN KEY ("credential_id") REFERENCES "admin_credentials"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;

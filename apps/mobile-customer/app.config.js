@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global module, process, require */
+/* global __dirname, module, process, require */
 
 const fs = require("node:fs");
 const path = require("node:path");

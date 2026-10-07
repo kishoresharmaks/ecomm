@@ -23,6 +23,10 @@ export function resolveImageUrl(value?: string | null) {
       return `${origin}${image}`;
     }
 
+    if (image.startsWith("/cms/")) {
+      return publicStorageImageUrl(apiUrl, cmsPublicPathToStorageKey(image));
+    }
+
     if (isStorageImageKey(image.slice(1))) {
       return `${origin}${image}`;
     }

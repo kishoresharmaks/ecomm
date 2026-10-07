@@ -14,6 +14,7 @@ This file is both human-readable governance and the machine-readable ownership m
 - `Permission`
 - `UserRole`
 - `AdminCredential`
+- `AdminMfaRecoveryCode`
 - `AdminSession`
 - `RolePermission`
 - `Customer`
@@ -249,6 +250,7 @@ This file is both human-readable governance and the machine-readable ownership m
 - `PushNotificationCampaign`
 - `PushNotificationCampaignBatch`
 - `PushNotificationReceipt`
+- `NewsletterSubscriber`
 - `EmailSetting`
 
 ## Context: `platform`

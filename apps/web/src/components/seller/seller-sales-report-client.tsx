@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { FormEvent, useState } from "react";
 import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, ClipboardList } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
 import { getSellerProfile, getSellerSalesReport, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
 import { ReportExportButton } from "@/components/reporting/report-export-button";
@@ -183,9 +183,23 @@ function SellerRetailReportSections({ report, currency }: { report: SellerSalesR
                   <p className="font-black text-[#1F2933]">{split.order.orderNumber}</p>
                   <p className="mt-1 text-sm font-semibold text-[#667085]">{formatDateTime(split.order.createdAt)}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                  <SellerStatusPill status={split.sellerStatus} />
-                  <span className="font-black text-[#163B5C]">{formatMoney(split.sellerSubtotalPaise, report.currency || currency)}</span>
+                <div className="flex flex-col items-end gap-1 md:justify-end">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SellerStatusPill status={split.sellerStatus} />
+                    <span
+                      className={cn(
+                        "font-black",
+                        split.sellerStatus === "CANCELLED" ? "line-through text-[#98A2B3]" : "text-[#163B5C]"
+                      )}
+                    >
+                      {formatMoney(split.sellerSubtotalPaise, report.currency || currency)}
+                    </span>
+                  </div>
+                  {split.sellerStatus === "CANCELLED" ? (
+                    <span className="text-xs font-bold text-[#D92D20]">
+                      {formatMoney(0, report.currency || currency)} Net payout
+                    </span>
+                  ) : null}
                 </div>
               </Link>
             ))}

@@ -130,7 +130,7 @@ function ProductDetailScreen() {
     const replacementDays = Number(attrs.replacementWindowDays ?? 0);
     if (!eligibility) return null;
 
-    let label = "";
+    let label: string;
     if (eligibility === "Non-returnable") {
       label = "Non-returnable";
     } else if (eligibility === "Return and replacement") {

@@ -1,5 +1,36 @@
 import { isAbortError, isNetworkError } from "./api";
-import posthog from "posthog-js";
+import posthog, { type CaptureResult } from "posthog-js";
+
+type CapturedException = {
+  type?: unknown;
+  stacktrace?: { frames?: unknown[] } | null;
+};
+
+// A genuine Error capture carries a stack trace, and its type is an Error class
+// name such as "TypeError". A bare DOM event reaches the global exception handler
+// with no stack trace and a type like "Event", which produces a valueless issue
+// that nobody can debug. Drop that class before it leaves the browser.
+function isStacklessNonError(exception: CapturedException): boolean {
+  const frames = exception.stacktrace?.frames;
+  const hasStack = Array.isArray(frames) && frames.length > 0;
+  const isErrorType = typeof exception.type === "string" && /Error$/.test(exception.type);
+  return !hasStack && !isErrorType;
+}
+
+export function dropStacklessNonErrorExceptions(
+  event: CaptureResult | null,
+): CaptureResult | null {
+  if (!event || event.event !== "$exception") {
+    return event;
+  }
+
+  const exceptions = event.properties?.["$exception_list"] as CapturedException[] | undefined;
+  if (Array.isArray(exceptions) && exceptions.length > 0 && exceptions.every(isStacklessNonError)) {
+    return null;
+  }
+
+  return event;
+}
 
 export function getPostHogToken(): string | undefined {
   return (
@@ -61,11 +92,16 @@ export function initPostHog(): typeof posthog | null {
     capture_pageleave: true,
     capture_exceptions: true,
     before_send: (event) => {
-      if (event?.event === "$exception") {
-        const type = String(event?.properties?.["$exception_type"] || "");
+      const filtered = dropStacklessNonErrorExceptions(event);
+      if (!filtered) {
+        return null;
+      }
+
+      if (filtered.event === "$exception") {
+        const type = String(filtered.properties?.["$exception_type"] || "");
         const message = String(
-          event?.properties?.["$exception_message"] ||
-            event?.properties?.["$exception_personURL"] ||
+          filtered.properties?.["$exception_message"] ||
+            filtered.properties?.["$exception_personURL"] ||
             "",
         );
         const lowerMsg = message.toLowerCase();
@@ -88,7 +124,7 @@ export function initPostHog(): typeof posthog | null {
           return null;
         }
       }
-      return event;
+      return filtered;
     },
     autocapture: true,
     person_profiles: "identified_only",
