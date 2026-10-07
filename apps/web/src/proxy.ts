@@ -10,6 +10,32 @@ const clerkConfigured = Boolean(
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
 );
 
+const impersonationParam = "ih_impersonate";
+const impersonationCookie = "indihub_seller_impersonation";
+const impersonationTokenPrefix = "ih_impersonate_";
+
+// Moves the admin impersonation token from the URL into the cookie before any page renders,
+// so the token never reaches browser history, analytics, or session replay.
+export function impersonationHandoffRedirect(request: NextRequest) {
+  const token = request.nextUrl.searchParams.get(impersonationParam);
+  if (token === null || !request.nextUrl.pathname.startsWith("/seller")) {
+    return null;
+  }
+
+  const url = request.nextUrl.clone();
+  url.searchParams.delete(impersonationParam);
+  const response = NextResponse.redirect(url, 307);
+  if (token.startsWith(impersonationTokenPrefix)) {
+    response.cookies.set(impersonationCookie, token, {
+      path: "/",
+      maxAge: 1800,
+      sameSite: "lax",
+      secure: request.nextUrl.protocol === "https:",
+    });
+  }
+  return response;
+}
+
 function securityProxy(request: NextRequest) {
   const hostHeader = request.headers.get("host") || "";
   const [hostname = "", port] = hostHeader.split(":");
@@ -21,6 +47,11 @@ function securityProxy(request: NextRequest) {
     url.port = "";
     url.protocol = "https:";
     return NextResponse.redirect(url, 301);
+  }
+
+  const impersonationRedirect = impersonationHandoffRedirect(request);
+  if (impersonationRedirect) {
+    return impersonationRedirect;
   }
 
   const nonce = createNonce();

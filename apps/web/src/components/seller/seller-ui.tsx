@@ -45,6 +45,7 @@ import {
   useId,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
@@ -419,10 +420,17 @@ function operationSummary(profile?: SellerProfile | null) {
   };
 }
 
+// The cookie changes only before a full page load (admin entry) or exit, so nothing needs to notify.
+function subscribeToImpersonationCookie() {
+  return () => undefined;
+}
+
+// The server has no document.cookie, so hydration must start without the token to match the server HTML.
+function getServerImpersonationToken(): string | null {
+  return null;
+}
+
 function getClientImpersonationToken(): string | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
   const match = document.cookie.match(/(?:^|;\s*)indihub_seller_impersonation=([^;]+)/);
   const rawToken = match?.[1];
   if (!rawToken) {
@@ -522,21 +530,11 @@ export function SellerImpersonationBanner({
 
 export function useSellerAuth() {
   const clerkOrLocalAuth = useCustomerAuth();
-  const [impersonationToken, setImpersonationToken] = useState<string | null>(() => getClientImpersonationToken());
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const searchParams = new URLSearchParams(window.location.search);
-      const paramToken = searchParams.get("ih_impersonate");
-      if (paramToken && paramToken.startsWith("ih_impersonate_")) {
-        document.cookie = `indihub_seller_impersonation=${encodeURIComponent(paramToken)}; path=/; max-age=1800; samesite=lax`;
-        const nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.delete("ih_impersonate");
-        window.history.replaceState({}, "", nextUrl.pathname + (nextUrl.search ? nextUrl.search : ""));
-        setImpersonationToken(paramToken);
-      }
-    }
-  }, []);
+  const impersonationToken = useSyncExternalStore(
+    subscribeToImpersonationCookie,
+    getClientImpersonationToken,
+    getServerImpersonationToken,
+  );
 
   if (impersonationToken) {
     const payload = parseImpersonationPayload(impersonationToken);
