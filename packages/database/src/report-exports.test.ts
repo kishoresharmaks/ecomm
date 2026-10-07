@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   gstr1ReviewPeriod,
+  reportExportCsvRow,
   reportExportDate,
   reportExportHeaders,
   ReportExportType,
+  type ReportExportRow,
 } from "./report-exports";
 
 describe("GSTR-1 review periods", () => {
@@ -68,6 +70,21 @@ describe("FINANCE_PAYMENTS export schema", () => {
     expect(headers).toContain("Net Amount");
     expect(headers).toContain("Status");
     expect(headers).toContain("Amount");
+  });
+
+  it("neutralizes formula injection characters in exported CSV rows", () => {
+    const row = {
+      "Payment ID": "=1+2",
+      "Provider": "@SUM(1,2)",
+      "Method": "+cmd|'/C calc'!A0",
+      "Amount": -15000,
+      "Status": "COMPLETED",
+    };
+    const csvLine = reportExportCsvRow(ReportExportType.FINANCE_PAYMENTS, row as ReportExportRow);
+    expect(csvLine).toContain("\"'=1+2\"");
+    expect(csvLine).toContain("\"'@SUM(1,2)\"");
+    expect(csvLine).toContain("\"'+cmd|'/C calc'!A0\"");
+    expect(csvLine).toContain('"-150.00"'); // Money header divided by 100
   });
 });
 

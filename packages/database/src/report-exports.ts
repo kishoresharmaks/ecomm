@@ -1589,15 +1589,25 @@ function minorToMajor(value: unknown) {
 }
 
 function csvCell(value: unknown) {
+  if (value === null || value === undefined) {
+    return '""';
+  }
+  if (typeof value === "number" || typeof value === "bigint") {
+    return `"${value}"`;
+  }
   const normalized =
-    value === null || value === undefined
-      ? ""
-      : value instanceof Date
-        ? value.toISOString()
-        : typeof value === "object" && "toString" in value
-          ? String(value)
-          : String(value);
-  return `"${normalized.replaceAll('"', '""')}"`;
+    value instanceof Date
+      ? value.toISOString()
+      : typeof value === "object" && "toString" in value
+        ? String(value)
+        : String(value);
+  const escaped = normalized.replaceAll('"', '""');
+  if (/^[=+\-@\t\r]/.test(normalized)) {
+    if (/^[=@\t\r]/.test(normalized) || !/^[+-]?\d+(\.\d+)?$/.test(normalized.trim())) {
+      return `"'${escaped}"`;
+    }
+  }
+  return `"${escaped}"`;
 }
 
 function reportTableRow(row: ReportExportRow) {

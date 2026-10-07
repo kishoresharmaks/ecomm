@@ -42,6 +42,7 @@ import {
 } from "./gst-report-csv";
 import { GstComplianceService } from "./gst-compliance.service";
 import { ReportsService } from "./reports.service";
+import { formatCsvRows } from "./csv-sanitizer";
 import { TaxDocumentsService } from "../tax/tax-documents.service";
 
 @ApiTags("Seller Reports")
@@ -142,7 +143,7 @@ export class SellerReportsController {
         v.stockQuantity <= 5 ? "LOW STOCK" : "OK",
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = formatCsvRows(rows);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=inventory-report.csv");
     res.send(csv);
@@ -171,7 +172,7 @@ export class SellerReportsController {
         String((p.netPayablePaise ?? 0) / 100),
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = formatCsvRows(rows);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=finance-report.csv");
     res.send(csv);
@@ -195,7 +196,7 @@ export class SellerReportsController {
         String((s.netPayablePaise ?? 0) / 100),
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = formatCsvRows(rows);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=tax-report.csv");
     res.send(csv);
@@ -393,7 +394,7 @@ export class SellerReportsController {
         String((r.approvedAmountPaise ?? 0) / 100),
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = formatCsvRows(rows);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=returns-report.csv");
     res.send(csv);
@@ -415,7 +416,7 @@ export class SellerReportsController {
         String((s.netPayablePaise ?? 0) / 100),
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = formatCsvRows(rows);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=sales-report.csv");
     res.send(csv);

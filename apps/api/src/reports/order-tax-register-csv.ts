@@ -1,3 +1,4 @@
+import { formatCsvRows } from "./csv-sanitizer";
 import type { OrderTaxRegisterRow } from "./order-tax-register.service";
 
 export function orderTaxRegisterCsv(rows: OrderTaxRegisterRow[]) {
@@ -132,12 +133,7 @@ export function orderTaxRegisterCsv(rows: OrderTaxRegisterRow[]) {
 }
 
 function csv(rows: Array<Array<string | number>>) {
-  return rows.map((row) => row.map(cell).join(",")).join("\n");
-}
-
-function cell(value: string | number) {
-  const text = String(value ?? "");
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+  return formatCsvRows(rows);
 }
 
 function date(value?: Date | string | null) {

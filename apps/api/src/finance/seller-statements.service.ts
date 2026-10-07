@@ -10,6 +10,7 @@ import {
 import { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import { renderProfessionalPdf } from "../documents/professional-pdf";
+import { formatCsvRows, sanitizeCsvCell } from "../reports/csv-sanitizer";
 import { FinanceListQueryDto, GenerateStatementDto } from "./dto/finance.dto";
 
 type StatementExport = Prisma.SellerStatementGetPayload<{
@@ -403,7 +404,7 @@ export class SellerStatementsService {
       ]);
     }
 
-    return rows.map((row) => row.map((cell) => this.csvCell(String(cell ?? ""))).join(",")).join("\n");
+    return formatCsvRows(rows);
   }
 
   private statementPdf(statement: StatementExport) {
@@ -527,8 +528,8 @@ export class SellerStatementsService {
     });
   }
 
-  private csvCell(value: string) {
-    return `"${value.replace(/"/g, '""')}"`;
+  private csvCell(value: unknown) {
+    return sanitizeCsvCell(value);
   }
 
   private rupees(paise: number) {

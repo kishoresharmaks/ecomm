@@ -57,6 +57,7 @@ import { usesCurrentProfessionalPdfTemplate } from "../documents/professional-pd
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { B2BService } from "./b2b.service";
+import { sanitizeCsvCell } from "../common/csv-sanitizer";
 import { StorageService } from "../storage/storage.service";
 import { TaxDocumentsService } from "../tax/tax-documents.service";
 import { renderB2BReceiptVoucherPdf } from "./b2b-document-pdf";
@@ -5000,8 +5001,7 @@ export class B2BOperationsService {
   }
 
   private csvCell(value: unknown) {
-    const text = value === null || value === undefined ? "" : String(value);
-    return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    return sanitizeCsvCell(value);
   }
 
   private netTermDays(term: B2BPaymentTermType) {

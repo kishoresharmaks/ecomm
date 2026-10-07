@@ -1,3 +1,5 @@
+import { formatCsvRows } from "./csv-sanitizer";
+
 type GstReportLine = {
   hsnSacCode?: string | null;
   description: string;
@@ -603,11 +605,7 @@ export function eWayBillStatusCsv(data: GstReport) {
 }
 
 function csv(rows: Array<Array<string | number>>) {
-  return rows
-    .map((row) =>
-      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
-    )
-    .join("\n");
+  return formatCsvRows(rows);
 }
 
 function rupees(paise: number) {

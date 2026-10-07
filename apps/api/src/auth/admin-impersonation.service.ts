@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { RoleCode, UserStatus } from "@indihub/database";
 import { PrismaService } from "../prisma/prisma.service";
@@ -6,6 +12,30 @@ import type { RequestUser } from "./types/indihub-request";
 
 const impersonationTokenPrefix = "ih_impersonate_";
 const defaultTtlMinutes = 30;
+
+export function getImpersonationSecret(): string {
+  const secret = (
+    process.env.ADMIN_IMPERSONATION_SECRET ||
+    process.env.ADMIN_SESSION_SECRET
+  )?.trim();
+
+  if (!secret) {
+    throw new ServiceUnavailableException(
+      "Seller impersonation signing secret is not configured. Set ADMIN_IMPERSONATION_SECRET or ADMIN_SESSION_SECRET.",
+    );
+  }
+
+  const isProduction =
+    process.env.NODE_ENV === "production" || process.env.INDIHUB_ENV === "production";
+
+  if (isProduction && secret.length < 32) {
+    throw new ServiceUnavailableException(
+      "ADMIN_IMPERSONATION_SECRET or ADMIN_SESSION_SECRET must be at least 32 characters in production.",
+    );
+  }
+
+  return secret;
+}
 
 export type ImpersonationPayload = {
   sellerId: string;
@@ -234,11 +264,7 @@ export class AdminImpersonationService {
   }
 
   private calculateSignature(dataString: string): string {
-    const secret =
-      process.env.ADMIN_SESSION_SECRET ||
-      process.env.CLERK_SECRET_KEY ||
-      process.env.DATABASE_URL ||
-      "indihub_impersonation_secret_fallback_key_2026";
+    const secret = getImpersonationSecret();
     return createHmac("sha256", secret).update(dataString).digest("base64url");
   }
 }
