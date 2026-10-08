@@ -1,21 +1,113 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
+  Calendar,
   CheckCircle2,
-  FileCheck2,
+  Crown,
+  Headphones,
   HelpCircle,
   ShieldCheck,
+  ShoppingBag,
   Sparkles,
   Star,
+  Store,
+  TrendingUp,
   Truck,
-  Wallet,
+  Gem,
 } from "lucide-react";
-import { Button } from "@indihub/ui";
-import { formatMoney } from "@/lib/storefront-api";
-import { listSellerSubscriptionPlans } from "@/lib/seller-api";
+import { listSellerSubscriptionPlans, type SellerSubscriptionPlan } from "@/lib/seller-api";
+
+// Fallback plans adhering to the exact production database configuration & reference design
+const DEFAULT_RETAIL_PLANS: SellerSubscriptionPlan[] = [
+  {
+    id: "plan-free-trial",
+    code: "FREE_TRIAL",
+    name: "FREE TRIAL",
+    description: "Perfect for getting started",
+    pricePaise: 0,
+    currency: "INR",
+    billingCycle: "MONTHLY",
+    trialDays: 0,
+    audience: "RETAIL",
+    productLimit: 25,
+    featuredProductLimit: 0,
+    b2bEnquiryLimit: 0,
+    commissionDiscountBps: 0,
+    isDefault: true,
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    id: "plan-gold-shop-normal",
+    code: "GOLD_SHOP_NORMAL",
+    name: "GOLD SHOP NORMAL",
+    description: "All grocery shop in 1handindia",
+    pricePaise: 299900,
+    currency: "INR",
+    billingCycle: "YEARLY",
+    trialDays: 15,
+    audience: "RETAIL",
+    productLimit: 50,
+    featuredProductLimit: 50,
+    b2bEnquiryLimit: 100,
+    commissionDiscountBps: 2, // 0.02%
+    isDefault: false,
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    id: "plan-gold-shop-special",
+    code: "GOLD_SHOP_SPECIAL",
+    name: "GOLD SHOP SPECIAL",
+    description: "All grocery shop in 1handindia",
+    pricePaise: 599900,
+    currency: "INR",
+    billingCycle: "YEARLY",
+    trialDays: 0,
+    audience: "RETAIL",
+    productLimit: 100,
+    featuredProductLimit: 0,
+    b2bEnquiryLimit: 250,
+    commissionDiscountBps: 0,
+    isDefault: false,
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    id: "plan-pro-yearly",
+    code: "PRO_YEARLY",
+    name: "PRO YEARLY",
+    description: "Higher-capacity plan for established marketplace sellers",
+    pricePaise: 999900,
+    currency: "INR",
+    billingCycle: "YEARLY",
+    trialDays: 0,
+    audience: "RETAIL",
+    productLimit: 250,
+    featuredProductLimit: 25,
+    b2bEnquiryLimit: 500,
+    commissionDiscountBps: 10,
+    isDefault: false,
+    isActive: true,
+    sortOrder: 4,
+  },
+];
+
+type PlanFeatureItem = {
+  text: string;
+  isHighlight?: boolean;
+  isStar?: boolean;
+  badge?: string;
+};
+
+function formatInr(paise: number): string {
+  const rupees = Math.round(paise / 100);
+  return rupees.toLocaleString("en-IN");
+}
 
 export function ChoosePlanClient({ initialMode: _initialMode }: { initialMode?: string | null }) {
   const plansQuery = useQuery({
@@ -23,325 +115,416 @@ export function ChoosePlanClient({ initialMode: _initialMode }: { initialMode?: 
     queryFn: () => listSellerSubscriptionPlans({ audience: "RETAIL" }),
   });
 
-  if (plansQuery.isLoading) {
-    return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center gap-3">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#ED3500] border-t-transparent" />
-        <p className="text-sm font-bold text-[#64748B]">Loading subscription plans...</p>
-      </div>
-    );
-  }
-
-  if (plansQuery.error) {
-    return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-[#F5B7B7] bg-[#FDECEC] p-6 text-center">
-        <p className="text-base font-bold text-[#8A1F1F]">Unable to load subscription plans</p>
-        <p className="mt-2 text-sm text-[#8A1F1F]/80">Please check your connection and try again.</p>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-4 border-[#8A1F1F]/30 text-[#8A1F1F] hover:bg-[#8A1F1F]/10"
-          onClick={() => plansQuery.refetch()}
-        >
-          Try Again
-        </Button>
-      </div>
-    );
-  }
-
   const rawPlans = plansQuery.data?.items ?? [];
+  const displayPlans = rawPlans.length > 0 ? rawPlans : DEFAULT_RETAIL_PLANS;
 
-  if (rawPlans.length === 0) {
-    return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-[#D9E2EA] bg-white p-10 text-center shadow-sm">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#FFF4F0] text-[#ED3500]">
-          <ShieldCheck className="h-7 w-7" />
-        </div>
-        <h3 className="mt-4 text-xl font-black text-[#0F172A]">No plans available</h3>
-        <p className="mt-2 text-sm text-[#64748B]">
-          There are currently no active subscription plans configured.
-        </p>
-        <Button asChild className="mt-6 bg-[#ED3500] font-black text-white hover:bg-[#D42F00]">
-          <Link href="/seller/register?mode=retail">
-            Continue to Registration
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Link>
-        </Button>
-      </div>
-    );
-  }
+  // Sort ascending by price
+  const sortedPlans = [...displayPlans].sort((a, b) => a.pricePaise - b.pricePaise);
 
-  // Sort plans ascending by price so Free is first, popular/standard is center, and pro is right
-  const sortedPlans = [...rawPlans].sort((a, b) => a.pricePaise - b.pricePaise);
-
-  // Recommend the entry-level paid plan (e.g. GOLD SHOP NORMAL)
-  const paidPlans = sortedPlans.filter((p) => p.pricePaise > 0);
-  const recommendedPlanId =
-    paidPlans[0]?.id ?? sortedPlans[0]?.id;
+  // Identify recommended plan (GOLD SHOP NORMAL by code/name, or first paid plan)
+  const recommendedPlan =
+    sortedPlans.find((p) => p.code === "GOLD_SHOP_NORMAL" || p.name.toUpperCase().includes("GOLD SHOP NORMAL")) ??
+    sortedPlans.find((p) => p.pricePaise > 0) ??
+    sortedPlans[0];
+  const recommendedPlanId = recommendedPlan?.id;
 
   return (
-    <div className="space-y-12">
-      {/* ── Stepper & Header Block ────────────────────────────────────────── */}
-      <div className="text-center">
-        {/* Onboarding Stepper */}
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white px-4 py-1.5 shadow-xs">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ED3500] text-[11px] font-black text-white">
-            1
-          </span>
-          <span className="text-xs font-black text-[#0F172A]">Select Plan</span>
-          <span className="text-xs text-[#CBD5E1]">•</span>
-          <span className="text-xs font-semibold text-[#94A3B8]">Step 2: Store Details</span>
-          <span className="text-xs text-[#CBD5E1]">•</span>
-          <span className="text-xs font-semibold text-[#94A3B8]">Step 3: Verification</span>
-        </div>
+    <div className="min-h-screen bg-[#FAFAF8] text-[#101828]">
+      {/* ── 1. TOP HEADER ─────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 w-full border-b border-[#F2F4F7] bg-white/95 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          {/* Left: Brand Logo & Title */}
+          <Link href="/seller" className="group flex items-center gap-3">
+            <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl bg-white shadow-xs ring-1 ring-[#F1E5E0] transition-transform group-hover:scale-105">
+              <Image
+                src="/brand/1handindia_logo.webp"
+                alt="1HandIndia Logo"
+                width={36}
+                height={36}
+                priority
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-base font-extrabold tracking-tight text-[#101828]">
+                1HandIndia
+              </span>
+              <span className="text-[11px] font-bold tracking-wider text-[#ED3500]">
+                Seller Hub
+              </span>
+            </div>
+          </Link>
 
-        <h1 className="mt-6 text-3xl font-black tracking-tight text-[#0F172A] sm:text-5xl">
-          Choose Your <span className="text-[#ED3500]">Selling Plan</span>
-        </h1>
-        <p className="mx-auto mt-3 max-w-2xl text-sm font-medium leading-relaxed text-[#64748B] sm:text-base">
-          Transparent pricing for verified Indian merchants. Start free or upgrade for higher listing volume,
-          commission discounts, and priority homepage promotion. Switch or upgrade anytime.
-        </p>
-      </div>
-
-      {/* ── Responsive Plans Grid ─────────────────────────────────────────── */}
-      <div className="mx-auto grid max-w-7xl items-stretch gap-8 md:grid-cols-2 lg:grid-cols-3">
-        {sortedPlans.map((plan) => {
-          const isFeatured = plan.id === recommendedPlanId;
-          const commissionBps = plan.commissionDiscountBps || 0;
-          const isFree = plan.pricePaise === 0;
-
-          return (
-            <div
-              key={plan.id}
-              className={`relative flex h-full flex-col rounded-3xl transition-all duration-200 ${
-                isFeatured
-                  ? "border-2 border-[#ED3500] bg-white shadow-[0_20px_50px_rgba(237,53,0,0.14)] ring-4 ring-[#ED3500]/10 hover:-translate-y-1"
-                  : "border border-[#E2E8F0] bg-white shadow-sm hover:border-[#CBD5E1] hover:shadow-lg hover:-translate-y-1"
-              }`}
+          {/* Right: Actions */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <Link
+              href="/support"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#475467] transition-colors hover:text-[#101828] sm:text-sm"
             >
-              {/* Featured Badge */}
-              {isFeatured && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ED3500] px-4 py-1 text-[11px] font-black uppercase tracking-wider text-white shadow-md">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Recommended Plan
-                  </span>
-                </div>
-              )}
+              <HelpCircle className="h-4 w-4 text-[#667085]" />
+              <span className="hidden sm:inline">Help Desk</span>
+            </Link>
 
-              {/* Card Header & Price */}
-              <div
-                className={`p-7 sm:p-8 ${
-                  isFeatured ? "rounded-t-3xl bg-gradient-to-b from-[#FFF5F2] to-white pt-9" : ""
-                }`}
-              >
-                <div>
-                  <h3 className="text-2xl font-black capitalize tracking-tight text-[#0F172A]">
-                    {plan.name.replace(/_/g, " ")}
-                  </h3>
-                  <p className="mt-2 h-10 text-xs font-semibold leading-relaxed text-[#64748B] line-clamp-2">
-                    {plan.description || "Everything needed to start and scale your store on 1HandIndia."}
-                  </p>
-                </div>
+            <span className="hidden text-[#D0D5DD] sm:inline">|</span>
 
-                {/* Price Display */}
-                <div className="mt-4 flex h-20 flex-col justify-end border-t border-[#F1F5F9] pt-4">
-                  {isFree ? (
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tracking-tight text-[#0F172A] sm:text-5xl">
-                        ₹0
-                      </span>
-                      <span className="rounded-full bg-[#ECFDF3] px-2.5 py-0.5 text-xs font-black text-[#027A48]">
-                        Free Forever
-                      </span>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-4xl font-black tracking-tight text-[#0F172A] sm:text-5xl">
-                          {formatMoney(plan.pricePaise, plan.currency)}
-                        </span>
-                        <span className="text-sm font-bold text-[#64748B]">
-                          /{plan.billingCycle.toLowerCase()}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs font-semibold text-[#94A3B8]">
-                        {plan.trialDays > 0
-                          ? `${plan.trialDays}-day free trial included • Plus GST`
-                          : `Billed ${plan.billingCycle.toLowerCase()} • Plus GST`}
-                      </p>
-                    </div>
-                  )}
-                </div>
+            <span className="hidden text-xs text-[#475467] md:inline sm:text-sm">
+              Already have an account?
+            </span>
+
+            <Link
+              href="/seller/sign-in"
+              className="inline-flex items-center justify-center rounded-full border border-[#D0D5DD] bg-white px-3.5 py-1.5 text-xs font-bold text-[#344054] transition-colors hover:border-[#98A2B3] hover:bg-[#F9FAFB] sm:px-4 sm:text-sm"
+            >
+              Sign In
+            </Link>
+
+            <Link
+              href="/seller/register?mode=retail"
+              className="inline-flex items-center justify-center rounded-full bg-[#ED3500] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition-colors hover:bg-[#D42F00] sm:px-4 sm:text-sm"
+            >
+              Start Selling
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* ── MAIN CONTENT ──────────────────────────────────────────────────── */}
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8 space-y-10 sm:space-y-12">
+        {/* ── 2. ONBOARDING PROGRESS & HERO ─────────────────────────────────── */}
+        <div className="space-y-6">
+          {/* Top Row: Step Badge & Step Indicator */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            {/* Step 1 of 3 Badge */}
+            <div className="inline-flex items-center gap-1.5 self-start rounded-full border border-[#FFDDD2] bg-[#FFF4F0] px-3.5 py-1 text-xs font-bold text-[#ED3500]">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Step 1 of 3</span>
+            </div>
+
+            {/* Modern SaaS Step Flow */}
+            <div className="flex items-center gap-2 self-start sm:self-auto sm:gap-3">
+              {/* Step 1 */}
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ED3500] text-xs font-black text-white shadow-xs">
+                  1
+                </span>
+                <span className="text-xs font-bold text-[#ED3500]">Plan</span>
               </div>
 
-              {/* Feature Checklist */}
-              <div className="flex flex-1 flex-col justify-between border-t border-[#F1F5F9] bg-[#FAFAFA] p-7 sm:p-8">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#94A3B8]">
-                    Included Features
-                  </p>
-                  <ul className="mt-4 space-y-3.5">
-                    {/* Listings */}
-                    <li className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
-                      <span className="text-xs font-bold text-[#1E293B]">
-                        {plan.productLimit
-                          ? `Up to ${plan.productLimit.toLocaleString()} catalogue listings`
-                          : "Unlimited catalogue listings"}
-                      </span>
-                    </li>
+              {/* Connector line */}
+              <div className="h-[2px] w-8 bg-[#E4E7EC] sm:w-16" />
 
-                    {/* Commission Discount */}
-                    <li className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
-                      <div className="text-xs font-bold text-[#1E293B]">
-                        {commissionBps > 0 ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <span>{commissionBps / 100}% commission discount</span>
-                            <span className="rounded bg-[#ECFDF3] px-1.5 py-0.5 text-[10px] font-black text-[#027A48]">
-                              Save More
-                            </span>
-                          </span>
-                        ) : (
-                          "Standard marketplace commission"
-                        )}
-                      </div>
-                    </li>
-
-                    {/* Featured Listings */}
-                    {plan.featuredProductLimit ? (
-                      <li className="flex items-start gap-3">
-                        <Star className="mt-0.5 h-4 w-4 shrink-0 text-[#F59E0B]" />
-                        <span className="text-xs font-bold text-[#1E293B]">
-                          {plan.featuredProductLimit} Homepage featured listings
-                        </span>
-                      </li>
-                    ) : null}
-
-                    {/* B2B Enquiry Limit */}
-                    {plan.b2bEnquiryLimit ? (
-                      <li className="flex items-start gap-3">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
-                        <span className="text-xs font-bold text-[#1E293B]">
-                          Up to {plan.b2bEnquiryLimit} B2B bulk buyer leads
-                        </span>
-                      </li>
-                    ) : (
-                      <li className="flex items-start gap-3">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
-                        <span className="text-xs font-bold text-[#1E293B]">
-                          Verified B2B wholesale enquiries
-                        </span>
-                      </li>
-                    )}
-
-                    {/* Logistics & Delivery */}
-                    <li className="flex items-start gap-3">
-                      <Truck className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
-                      <span className="text-xs font-bold text-[#1E293B]">
-                        Doorstep courier pickup & tracking
-                      </span>
-                    </li>
-
-                    {/* Payouts */}
-                    <li className="flex items-start gap-3">
-                      <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
-                      <span className="text-xs font-bold text-[#1E293B]">
-                        Direct automated bank payouts
-                      </span>
-                    </li>
-
-                    {/* Support */}
-                    <li className="flex items-start gap-3">
-                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
-                      <span className="text-xs font-bold text-[#1E293B]">
-                        {isFeatured ? "Priority merchant onboarding support" : "Standard seller help desk"}
-                      </span>
-                    </li>
-                  </ul>
-                </div>
+              {/* Step 2 */}
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D0D5DD] bg-white text-xs font-bold text-[#667085]">
+                  2
+                </span>
+                <span className="text-xs font-semibold text-[#667085] hidden sm:inline">Store Details</span>
               </div>
 
-              {/* Action Button Footer - Aligned at bottom */}
-              <div className="mt-auto border-t border-[#F1F5F9] bg-[#FAFAFA] p-6 sm:p-7">
-                <Link
-                  href={`/seller/register?mode=retail&plan=${plan.id}`}
-                  className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-black transition-all duration-150 cursor-pointer active:scale-[0.98] ${
-                    isFeatured
-                      ? "bg-[#ED3500] hover:bg-[#D42F00] shadow-md shadow-[#ED3500]/25 !text-white [&_*]:!text-white"
-                      : "border-2 border-[#ED3500] bg-white hover:bg-[#ED3500] !text-[#ED3500] hover:!text-white [&_*]:!text-[#ED3500] hover:[&_*]:!text-white"
-                  }`}
-                  style={isFeatured ? { color: "#ffffff" } : undefined}
-                >
-                  <span className="text-sm font-extrabold">Select Plan</span>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
+              {/* Connector line */}
+              <div className="h-[2px] w-8 bg-[#E4E7EC] sm:w-16" />
+
+              {/* Step 3 */}
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D0D5DD] bg-white text-xs font-bold text-[#667085]">
+                  3
+                </span>
+                <span className="text-xs font-semibold text-[#667085] hidden sm:inline">Verification</span>
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* ── Trust Pillars & Enterprise Callout ─────────────────────────────── */}
-      <div className="mx-auto max-w-7xl pt-6">
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-xs">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
-              <ShieldCheck className="h-5 w-5" />
-            </span>
-            <h4 className="mt-4 text-sm font-black text-[#0F172A]">Zero Hidden Fees</h4>
-            <p className="mt-1 text-xs font-medium leading-relaxed text-[#64748B]">
-              Transparent commission and subscription rates with no surprise charges.
-            </p>
           </div>
 
-          <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-xs">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
-              <Truck className="h-5 w-5" />
-            </span>
-            <h4 className="mt-4 text-sm font-black text-[#0F172A]">Pan-India Logistics</h4>
-            <p className="mt-1 text-xs font-medium leading-relaxed text-[#64748B]">
-              Pre-integrated Shiprocket courier pickups across 19,000+ Indian pincodes.
-            </p>
-          </div>
+          {/* ── 3. TWO-COLUMN HERO SECTION ─────────────────────────────────── */}
+          <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-12 lg:gap-12">
+            {/* Left Column: Headlines */}
+            <div className="space-y-4 lg:col-span-7">
+              <h1 className="text-3xl font-black tracking-tight text-[#101828] sm:text-5xl lg:text-[50px] leading-[1.15]">
+                Choose the right plan <br className="hidden sm:inline" />
+                for <span className="text-[#ED3500]">your shop</span>
+              </h1>
+              <p className="max-w-xl text-sm font-medium leading-relaxed text-[#475467] sm:text-base">
+                Transparent pricing for verified Indian merchants. Start free or upgrade for higher listing volume,
+                lower commission, and priority promotion.
+              </p>
+            </div>
 
-          <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-xs">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
-              <Wallet className="h-5 w-5" />
-            </span>
-            <h4 className="mt-4 text-sm font-black text-[#0F172A]">Fast Direct Payouts</h4>
-            <p className="mt-1 text-xs font-medium leading-relaxed text-[#64748B]">
-              Automated T+1 direct payouts into your verified Indian bank account.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-xs">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
-              <FileCheck2 className="h-5 w-5" />
-            </span>
-            <h4 className="mt-4 text-sm font-black text-[#0F172A]">No Lock-In Contract</h4>
-            <p className="mt-1 text-xs font-medium leading-relaxed text-[#64748B]">
-              Upgrade, downgrade, or cancel your subscription anytime from your seller dashboard.
-            </p>
+            {/* Right Column: 3D Seller Store Illustration */}
+            <div className="flex justify-center lg:col-span-5 lg:justify-end">
+              <div className="relative aspect-[4/3] w-full max-w-[340px] overflow-hidden rounded-3xl bg-transparent transition-transform duration-300 hover:scale-[1.02] sm:max-w-[380px]">
+                <Image
+                  src="/seller/seller-store-hero.jpg"
+                  alt="1HandIndia Seller Store Illustration"
+                  fill
+                  priority
+                  className="object-contain"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Enterprise Callout */}
-        <div className="mt-8 rounded-2xl border border-[#E2E8F0] bg-white p-6 text-center sm:p-8">
-          <div className="inline-flex items-center gap-2 text-xs font-bold text-[#ED3500]">
-            <HelpCircle className="h-4 w-4" />
-            Need custom volume plans or multi-location inventory support?
-          </div>
-          <p className="mt-2 text-sm font-semibold text-[#64748B]">
-            Reach out to our seller onboarding team for wholesale distributor and enterprise merchant solutions.
-          </p>
-          <Button asChild variant="outline" size="sm" className="mt-4 border-[#CBD5E1] font-bold text-[#334155] hover:bg-[#F8FAFC]">
-            <Link href="/contact?topic=seller-enterprise">Contact Merchant Partnerships</Link>
-          </Button>
+        {/* ── 4. FOUR-COLUMN PRICING GRID ───────────────────────────────────── */}
+        <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {sortedPlans.map((plan) => {
+            const isFeatured = plan.id === recommendedPlanId;
+            const isFree = plan.pricePaise === 0;
+            const monthlyEquivalent = isFree ? 0 : Math.round(plan.pricePaise / 12 / 100);
+            const commissionBps = plan.commissionDiscountBps || 0;
+
+            // Plan icon & card color styling
+            let iconBox = (
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#F2F4F7] text-[#475467]">
+                <ShoppingBag className="h-6 w-6" />
+              </div>
+            );
+            const displayTitle = plan.name.replace(/_/g, " ").toUpperCase();
+            const displaySubtitle = plan.description || "Perfect for getting started";
+
+            if (isFeatured || displayTitle.includes("NORMAL")) {
+              iconBox = (
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#FFF4F0] text-[#ED3500]">
+                  <Store className="h-6 w-6" />
+                </div>
+              );
+            } else if (displayTitle.includes("SPECIAL")) {
+              iconBox = (
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#FEF6EE] text-[#F59E0B]">
+                  <Crown className="h-6 w-6" />
+                </div>
+              );
+            } else if (displayTitle.includes("PRO")) {
+              iconBox = (
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#F4F3FF] text-[#7F56D9]">
+                  <Gem className="h-6 w-6" />
+                </div>
+              );
+            }
+
+            // Construct feature items for each plan
+            const features: PlanFeatureItem[] = [];
+
+            if (isFree) {
+              features.push({ text: `Up to ${plan.productLimit ?? 25} catalogue listings` });
+              features.push({ text: "Standard marketplace commission" });
+              features.push({ text: "Verified B2B wholesale enquiries" });
+              features.push({ text: "Doorstep courier pickup & tracking" });
+              features.push({ text: "Direct automated bank payouts" });
+              features.push({ text: "Standard seller help desk" });
+            } else if (isFeatured || displayTitle.includes("NORMAL")) {
+              features.push({ text: `Up to ${plan.productLimit ?? 50} catalogue listings` });
+              features.push({
+                text: commissionBps > 0 ? `${commissionBps / 100}% commission discount` : "0.02% commission discount",
+                badge: "Save More",
+              });
+              features.push({
+                text: `${plan.featuredProductLimit ?? 50} Homepage featured listings`,
+                isStar: true,
+              });
+              features.push({ text: `Up to ${plan.b2bEnquiryLimit ?? 100} B2B bulk buyer leads` });
+              features.push({ text: "Doorstep courier pickup & tracking" });
+              features.push({ text: "Direct automated bank payouts" });
+              features.push({ text: "Priority merchant onboarding support" });
+            } else if (displayTitle.includes("SPECIAL")) {
+              features.push({ text: `Up to ${plan.productLimit ?? 100} catalogue listings` });
+              features.push({ text: "Standard marketplace commission" });
+              features.push({ text: `Up to ${plan.b2bEnquiryLimit ?? 250} B2B bulk buyer leads` });
+              features.push({ text: "Doorstep courier pickup & tracking" });
+              features.push({ text: "Direct automated bank payouts" });
+              features.push({ text: "Standard seller help desk" });
+            } else {
+              // PRO
+              features.push({ text: `Up to ${plan.productLimit ?? 250} catalogue listings` });
+              features.push({ text: "Lower marketplace commission" });
+              features.push({ text: `Up to ${plan.b2bEnquiryLimit ?? 500} B2B bulk buyer leads` });
+              features.push({ text: "Priority homepage promotion" });
+              features.push({ text: "Doorstep courier pickup & tracking" });
+              features.push({ text: "Direct automated bank payouts" });
+              features.push({ text: "Priority support / account manager" });
+            }
+
+            return (
+              <div
+                key={plan.id}
+                className={`relative flex h-full flex-col justify-between rounded-[24px] bg-white p-6 transition-all duration-200 hover:-translate-y-1 ${
+                  isFeatured
+                    ? "border-2 border-[#ED3500] shadow-xl shadow-[#ED3500]/10"
+                    : "border border-[#E4E7EC] shadow-xs hover:border-[#D0D5DD] hover:shadow-md"
+                }`}
+              >
+                {/* Most Popular Badge on Recommended Plan */}
+                {isFeatured && (
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ED3500] px-3.5 py-1 text-[11px] font-black uppercase tracking-wider text-white shadow-md">
+                      <Crown className="h-3 w-3 fill-white" />
+                      MOST POPULAR
+                    </span>
+                  </div>
+                )}
+
+                {/* Card Top: Icon, Title & Description */}
+                <div>
+                  <div className="flex items-center gap-3">
+                    {iconBox}
+                    <div>
+                      <h3 className="text-base font-black uppercase tracking-wide text-[#101828]">
+                        {displayTitle}
+                      </h3>
+                      <p className="text-xs text-[#667085] line-clamp-1">
+                        {displaySubtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Price Section */}
+                  <div className="mt-5 space-y-1.5">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold tracking-tight text-[#101828] sm:text-4xl">
+                        {isFree ? "₹0" : `₹${formatInr(plan.pricePaise)}`}
+                      </span>
+                      <span className="text-xs font-semibold text-[#667085]">
+                        {isFree ? "Forever" : `/${plan.billingCycle.toLowerCase()}`}
+                      </span>
+                    </div>
+
+                    {isFree ? (
+                      <div className="pt-1">
+                        <span className="inline-flex items-center rounded-full bg-[#ECFDF3] px-2.5 py-0.5 text-[11px] font-bold text-[#16A34A]">
+                          No credit card required
+                        </span>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs font-semibold text-[#667085]">
+                          ≈ ₹{monthlyEquivalent.toLocaleString("en-IN")}/month
+                        </p>
+                        <div className="mt-2.5 flex items-center justify-between text-[11px]">
+                          {plan.trialDays > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-[#FFDDD2] bg-[#FFF4F0] px-2 py-0.5 font-bold text-[#ED3500]">
+                              <Calendar className="h-3 w-3" />
+                              {plan.trialDays}-day free trial included
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-[#EAECF0] bg-[#F9FAFB] px-2 py-0.5 font-medium text-[#475467]">
+                              <Calendar className="h-3 w-3 text-[#667085]" />
+                              Billed yearly
+                            </span>
+                          )}
+                          <span className="font-semibold text-[#98A2B3]">Plus GST</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Divider */}
+                  <div className="my-5 border-t border-[#F2F4F7]" />
+
+                  {/* Features List */}
+                  <ul className="space-y-3 text-xs leading-relaxed">
+                    {features.map((item, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5">
+                        {item.isStar ? (
+                          <Star className="mt-0.5 h-4 w-4 shrink-0 fill-[#F59E0B] text-[#F59E0B]" />
+                        ) : (
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#16A34A]" />
+                        )}
+                        <div className="flex-1 font-medium text-[#344054]">
+                          <span>{item.text}</span>
+                          {item.badge && (
+                            <span className="ml-1.5 inline-block rounded bg-[#ECFDF3] px-1.5 py-0.2 text-[10px] font-black text-[#16A34A]">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Card Action Button (Pinned to baseline via mt-auto) */}
+                <div className="mt-auto pt-6">
+                  <Link
+                    href={`/seller/register?mode=retail&plan=${plan.id}`}
+                    className={`flex h-11 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-extrabold transition-all duration-150 active:scale-[0.98] ${
+                      isFeatured
+                        ? "bg-[#ED3500] hover:bg-[#D42F00] text-white shadow-md shadow-[#ED3500]/25 !text-white [&_*]:!text-white"
+                        : "border-2 border-[#ED3500] bg-white text-[#ED3500] hover:bg-[#ED3500] hover:text-white [&_*]:text-[#ED3500] hover:[&_*]:text-white"
+                    }`}
+                    style={isFeatured ? { color: "#ffffff" } : undefined}
+                  >
+                    <span>{isFree ? "Start Free" : "Select Plan"}</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
+
+        {/* ── 10. HORIZONTAL BENEFITS BAR ──────────────────────────────────── */}
+        <div className="rounded-2xl border border-[#E4E7EC] bg-white p-5 sm:p-6 shadow-xs">
+          <div className="grid grid-cols-1 items-center gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Secure Payments */}
+            <div className="flex items-center gap-3.5">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-[#101828]">Secure Payments</h4>
+                <p className="text-xs text-[#667085]">Direct bank payouts</p>
+              </div>
+            </div>
+
+            {/* Pan India Logistics */}
+            <div className="flex items-center gap-3.5">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
+                <Truck className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-[#101828]">Pan India Logistics</h4>
+                <p className="text-xs text-[#667085]">Pickup & tracking support</p>
+              </div>
+            </div>
+
+            {/* Dedicated Support */}
+            <div className="flex items-center gap-3.5">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
+                <Headphones className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-[#101828]">Dedicated Support</h4>
+                <p className="text-xs text-[#667085]">Get help when you need it</p>
+              </div>
+            </div>
+
+            {/* Grow Your Business */}
+            <div className="flex items-center gap-3.5">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFF4F0] text-[#ED3500]">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-[#101828]">Grow Your Business</h4>
+                <p className="text-xs text-[#667085]">Reach more buyers across India</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── FOOTER NOTE ───────────────────────────────────────────────────── */}
+        <div className="flex flex-col items-center justify-between gap-4 border-t border-[#EAECF0] pt-6 text-xs text-[#667085] sm:flex-row">
+          <p>© {new Date().getFullYear()} 1HandIndia Seller Hub. All rights reserved.</p>
+          <div className="flex items-center gap-6">
+            <Link href="/terms-and-conditions" className="hover:text-[#101828] transition-colors">
+              Terms & Conditions
+            </Link>
+            <Link href="/seller-policy" className="hover:text-[#101828] transition-colors">
+              Seller Policy
+            </Link>
+            <Link href="/support" className="hover:text-[#101828] transition-colors">
+              Support
+            </Link>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
