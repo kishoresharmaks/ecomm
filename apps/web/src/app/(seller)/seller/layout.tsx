@@ -14,6 +14,7 @@ const clerkConfigured = Boolean(
 export default async function SellerRouteLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const pathname = (await headers()).get("x-indihub-pathname") ?? "/seller";
   const isPublicSellerRoute =
+    pathname === "/seller" ||
     pathname === "/seller/sign-in" ||
     pathname.startsWith("/seller/sign-in/") ||
     pathname === "/seller/sign-up" ||

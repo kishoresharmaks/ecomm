@@ -156,6 +156,18 @@ function SellerWorkspacePage({
   );
 }
 
+function isStandaloneSellerPage(pathname: string) {
+  return (
+    pathname === "/seller" ||
+    pathname === "/seller/choose-plan" ||
+    pathname.startsWith("/seller/choose-plan/") ||
+    pathname === "/seller/sign-in" ||
+    pathname.startsWith("/seller/sign-in/") ||
+    pathname === "/seller/sign-up" ||
+    pathname.startsWith("/seller/sign-up/")
+  );
+}
+
 export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -183,6 +195,16 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
   // We can show it optimistically if we have profileQuery.data, otherwise we wait.
   const showSidebar = !isSignedOut && !requiresOnboarding && (!isLoading || Boolean(profileQuery.data));
   const isImpersonating = sellerAuth.mode === "impersonation";
+
+  if (isStandaloneSellerPage(pathname)) {
+    return (
+      <SellerWorkspaceRootContext.Provider value>
+        <MaintenanceGate scope="seller">
+          {children}
+        </MaintenanceGate>
+      </SellerWorkspaceRootContext.Provider>
+    );
+  }
 
   return (
     <SellerWorkspaceRootContext.Provider value>
@@ -244,23 +266,21 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
                 </nav>
               ) : null}
             </div>
-            ) : pathname !== "/seller" ? (
+            ) : (
               <SellerPortalHeader profile={profileQuery.data} isSignedOut={isSignedOut} />
-            ) : null}
+            )}
 
             <div
               className={cn(
                 "flex-1",
                 showSidebar
                   ? "px-4 py-5 sm:px-6 lg:px-10 lg:py-8"
-                  : pathname === "/seller"
-                    ? "w-full p-0"
-                    : "mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 lg:px-10 lg:py-8",
+                  : "mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 lg:px-10 lg:py-8",
               )}
             >
               {missingCapability ? <SellerCapabilityUnavailable capability={missingCapability} /> : children}
             </div>
-            {!showSidebar && pathname !== "/seller" ? <SellerPortalFooter /> : null}
+            {!showSidebar ? <SellerPortalFooter /> : null}
             </section>
           </div>
         </main>

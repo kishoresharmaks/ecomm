@@ -498,18 +498,21 @@ export function SellerRegistrationForm({
     <>
     <form ref={formRef} onSubmit={onSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
       <div className="order-2 grid gap-6 xl:order-1">
-        <div className="overflow-hidden rounded-xl border border-[#F4C7B8] bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-[#F0E4DF] bg-white shadow-sm">
           <div className="h-1 bg-[#ED3500]" />
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ED3500]">Application overview</p>
-              <h2 className="mt-2 text-xl font-black text-[#123A5A]">Build your verified seller profile</h2>
-              <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#667085]">
-                Choose how you sell, upload the required proofs, and add the business details used for review and fulfilment.
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-[#FFDDD2] bg-[#FFF4F0] px-3 py-0.5 text-xs font-bold text-[#ED3500]">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Step 2 of 3 &bull; Store Details & KYC</span>
+              </div>
+              <h1 className="mt-2.5 text-2xl font-black text-[#123A5A]">Build your verified seller profile</h1>
+              <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-[#667085]">
+                Complete your business profile, upload required proofs, and configure the store details used for review and fulfilment.
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2 rounded-lg bg-[#FFF0EC] px-3 py-2 text-xs font-bold text-[#9F2600]">
-              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-[#FFDDD2] bg-[#FFF0EC] px-3.5 py-2 text-xs font-bold text-[#9F2600]">
+              <ShieldCheck className="h-4 w-4 text-[#ED3500]" aria-hidden="true" />
               Reviewed before activation
             </div>
           </div>
