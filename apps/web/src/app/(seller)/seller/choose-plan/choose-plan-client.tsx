@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
-  Boxes,
   CheckCircle2,
   FileCheck2,
   HelpCircle,
@@ -13,23 +12,15 @@ import {
   Star,
   Truck,
   Wallet,
-  Wrench,
 } from "lucide-react";
 import { Button } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
 import { listSellerSubscriptionPlans } from "@/lib/seller-api";
-import {
-  registrationModeFromQuery,
-  primaryCapabilityForMode,
-} from "@/components/seller/seller-registration-navigation";
 
-export function ChoosePlanClient({ initialMode }: { initialMode?: string | null }) {
-  const mode = registrationModeFromQuery(initialMode);
-  const primaryCapability = primaryCapabilityForMode(mode);
-
+export function ChoosePlanClient({ initialMode: _initialMode }: { initialMode?: string | null }) {
   const plansQuery = useQuery({
-    queryKey: ["seller-subscription-plans", mode],
-    queryFn: () => listSellerSubscriptionPlans({ audience: primaryCapability }),
+    queryKey: ["seller-subscription-plans", "retail"],
+    queryFn: () => listSellerSubscriptionPlans({ audience: "RETAIL" }),
   });
 
   if (plansQuery.isLoading) {
@@ -58,9 +49,9 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
     );
   }
 
-  const plans = plansQuery.data?.items ?? [];
+  const rawPlans = plansQuery.data?.items ?? [];
 
-  if (plans.length === 0) {
+  if (rawPlans.length === 0) {
     return (
       <div className="mx-auto max-w-xl rounded-2xl border border-[#D9E2EA] bg-white p-10 text-center shadow-sm">
         <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#FFF4F0] text-[#ED3500]">
@@ -68,10 +59,10 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
         </div>
         <h3 className="mt-4 text-xl font-black text-[#0F172A]">No plans available</h3>
         <p className="mt-2 text-sm text-[#64748B]">
-          There are currently no active subscription plans configured for this seller track.
+          There are currently no active subscription plans configured.
         </p>
         <Button asChild className="mt-6 bg-[#ED3500] font-black text-white hover:bg-[#D42F00]">
-          <Link href={`/seller/register?mode=${mode.toLowerCase()}`}>
+          <Link href="/seller/register?mode=retail">
             Continue to Registration
             <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
@@ -80,12 +71,13 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
     );
   }
 
-  // Recommend the best paid tier or the first active plan
-  const paidPlans = plans.filter((p) => p.pricePaise > 0);
+  // Sort plans ascending by price so Free is first, popular/standard is center, and pro is right
+  const sortedPlans = [...rawPlans].sort((a, b) => a.pricePaise - b.pricePaise);
+
+  // Recommend the entry-level paid plan (e.g. GOLD SHOP NORMAL)
+  const paidPlans = sortedPlans.filter((p) => p.pricePaise > 0);
   const recommendedPlanId =
-    paidPlans.length > 0
-      ? paidPlans.sort((a, b) => a.pricePaise - b.pricePaise)[0]?.id
-      : plans[0]?.id;
+    paidPlans[0]?.id ?? sortedPlans[0]?.id;
 
   return (
     <div className="space-y-12">
@@ -107,42 +99,14 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
           Choose Your <span className="text-[#ED3500]">Selling Plan</span>
         </h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm font-medium leading-relaxed text-[#64748B] sm:text-base">
-          Transparent pricing for Indian businesses. Start free or upgrade for higher listing volume,
-          commission discounts, and priority promotion. Switch plans anytime.
+          Transparent pricing for verified Indian merchants. Start free or upgrade for higher listing volume,
+          commission discounts, and priority homepage promotion. Switch or upgrade anytime.
         </p>
-
-        {/* Mode Switcher Tabs */}
-        <div className="mt-8 flex justify-center">
-          <div className="inline-flex rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-1.5 shadow-xs">
-            <Link
-              href="/seller/choose-plan?mode=retail"
-              className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black transition-all ${
-                primaryCapability === "RETAIL"
-                  ? "bg-white text-[#0F172A] shadow-sm"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              <Boxes className="h-4 w-4 text-[#ED3500]" />
-              Retail Products & B2B
-            </Link>
-            <Link
-              href="/seller/choose-plan?mode=service"
-              className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black transition-all ${
-                primaryCapability === "SERVICE"
-                  ? "bg-white text-[#0F172A] shadow-sm"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              <Wrench className="h-4 w-4 text-[#ED3500]" />
-              Professional Services
-            </Link>
-          </div>
-        </div>
       </div>
 
-      {/* ── Plans Grid ────────────────────────────────────────────────────── */}
-      <div className="mx-auto grid max-w-7xl gap-8 md:grid-cols-2 lg:grid-cols-3">
-        {plans.map((plan) => {
+      {/* ── Responsive Plans Grid ─────────────────────────────────────────── */}
+      <div className="mx-auto grid max-w-7xl items-stretch gap-8 md:grid-cols-2 lg:grid-cols-3">
+        {sortedPlans.map((plan) => {
           const isFeatured = plan.id === recommendedPlanId;
           const commissionBps = plan.commissionDiscountBps || 0;
           const isFree = plan.pricePaise === 0;
@@ -150,15 +114,15 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
           return (
             <div
               key={plan.id}
-              className={`relative flex flex-col rounded-3xl transition-all duration-200 ${
+              className={`relative flex h-full flex-col rounded-3xl transition-all duration-200 ${
                 isFeatured
-                  ? "border-2 border-[#ED3500] bg-white shadow-[0_20px_50px_rgba(237,53,0,0.12)] ring-4 ring-[#ED3500]/10 hover:-translate-y-1"
+                  ? "border-2 border-[#ED3500] bg-white shadow-[0_20px_50px_rgba(237,53,0,0.14)] ring-4 ring-[#ED3500]/10 hover:-translate-y-1"
                   : "border border-[#E2E8F0] bg-white shadow-sm hover:border-[#CBD5E1] hover:shadow-lg hover:-translate-y-1"
               }`}
             >
               {/* Featured Badge */}
               {isFeatured && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ED3500] px-4 py-1 text-[11px] font-black uppercase tracking-wider text-white shadow-md">
                     <Sparkles className="h-3.5 w-3.5" />
                     Recommended Plan
@@ -172,20 +136,17 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
                   isFeatured ? "rounded-t-3xl bg-gradient-to-b from-[#FFF5F2] to-white pt-9" : ""
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-2xl font-black capitalize tracking-tight text-[#0F172A]">
-                      {plan.name.replace(/_/g, " ")}
-                    </h3>
-                    <p className="mt-2 min-h-[44px] text-xs font-semibold leading-relaxed text-[#64748B]">
-                      {plan.description ||
-                        `Everything needed to scale your ${mode.toLowerCase()} storefront on 1HandIndia.`}
-                    </p>
-                  </div>
+                <div>
+                  <h3 className="text-2xl font-black capitalize tracking-tight text-[#0F172A]">
+                    {plan.name.replace(/_/g, " ")}
+                  </h3>
+                  <p className="mt-2 h-10 text-xs font-semibold leading-relaxed text-[#64748B] line-clamp-2">
+                    {plan.description || "Everything needed to start and scale your store on 1HandIndia."}
+                  </p>
                 </div>
 
                 {/* Price Display */}
-                <div className="mt-5 border-t border-[#F1F5F9] pt-5">
+                <div className="mt-4 flex h-20 flex-col justify-end border-t border-[#F1F5F9] pt-4">
                   {isFree ? (
                     <div className="flex items-baseline gap-2">
                       <span className="text-4xl font-black tracking-tight text-[#0F172A] sm:text-5xl">
@@ -216,23 +177,23 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
               </div>
 
               {/* Feature Checklist */}
-              <div className="flex-1 border-t border-[#F1F5F9] bg-[#FAFAFA] p-7 sm:p-8">
-                <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#94A3B8]">
-                  Included Features
-                </p>
-                <ul className="mt-4 space-y-3.5">
-                  {/* Listings */}
-                  <li className="flex items-start gap-3">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
-                    <span className="text-xs font-bold text-[#1E293B]">
-                      {plan.productLimit
-                        ? `Up to ${plan.productLimit.toLocaleString()} catalogue listings`
-                        : "Unlimited catalogue listings"}
-                    </span>
-                  </li>
+              <div className="flex flex-1 flex-col justify-between border-t border-[#F1F5F9] bg-[#FAFAFA] p-7 sm:p-8">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#94A3B8]">
+                    Included Features
+                  </p>
+                  <ul className="mt-4 space-y-3.5">
+                    {/* Listings */}
+                    <li className="flex items-start gap-3">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
+                      <span className="text-xs font-bold text-[#1E293B]">
+                        {plan.productLimit
+                          ? `Up to ${plan.productLimit.toLocaleString()} catalogue listings`
+                          : "Unlimited catalogue listings"}
+                      </span>
+                    </li>
 
-                  {/* Commission Discount */}
-                  {primaryCapability === "RETAIL" && (
+                    {/* Commission Discount */}
                     <li className="flex items-start gap-3">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
                       <div className="text-xs font-bold text-[#1E293B]">
@@ -248,84 +209,82 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
                         )}
                       </div>
                     </li>
-                  )}
 
-                  {/* Featured Listings */}
-                  {plan.featuredProductLimit ? (
+                    {/* Featured Listings */}
+                    {plan.featuredProductLimit ? (
+                      <li className="flex items-start gap-3">
+                        <Star className="mt-0.5 h-4 w-4 shrink-0 text-[#F59E0B]" />
+                        <span className="text-xs font-bold text-[#1E293B]">
+                          {plan.featuredProductLimit} Homepage featured listings
+                        </span>
+                      </li>
+                    ) : null}
+
+                    {/* B2B Enquiry Limit */}
+                    {plan.b2bEnquiryLimit ? (
+                      <li className="flex items-start gap-3">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
+                        <span className="text-xs font-bold text-[#1E293B]">
+                          Up to {plan.b2bEnquiryLimit} B2B bulk buyer leads
+                        </span>
+                      </li>
+                    ) : (
+                      <li className="flex items-start gap-3">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
+                        <span className="text-xs font-bold text-[#1E293B]">
+                          Verified B2B wholesale enquiries
+                        </span>
+                      </li>
+                    )}
+
+                    {/* Logistics & Delivery */}
                     <li className="flex items-start gap-3">
-                      <Star className="mt-0.5 h-4 w-4 shrink-0 text-[#F59E0B]" />
+                      <Truck className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
                       <span className="text-xs font-bold text-[#1E293B]">
-                        {plan.featuredProductLimit} Homepage featured listings
+                        Doorstep courier pickup & tracking
                       </span>
                     </li>
-                  ) : null}
 
-                  {/* B2B Enquiry Limit */}
-                  {plan.b2bEnquiryLimit ? (
+                    {/* Payouts */}
                     <li className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
+                      <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
                       <span className="text-xs font-bold text-[#1E293B]">
-                        Up to {plan.b2bEnquiryLimit} B2B bulk buyer leads
+                        Direct automated bank payouts
                       </span>
                     </li>
-                  ) : (
+
+                    {/* Support */}
                     <li className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]" />
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
                       <span className="text-xs font-bold text-[#1E293B]">
-                        Verified B2B wholesale enquiries
+                        {isFeatured ? "Priority merchant onboarding support" : "Standard seller help desk"}
                       </span>
                     </li>
-                  )}
-
-                  {/* Logistics & Delivery */}
-                  <li className="flex items-start gap-3">
-                    <Truck className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
-                    <span className="text-xs font-bold text-[#1E293B]">
-                      Doorstep courier pickup & tracking
-                    </span>
-                  </li>
-
-                  {/* Payouts */}
-                  <li className="flex items-start gap-3">
-                    <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
-                    <span className="text-xs font-bold text-[#1E293B]">
-                      Direct automated bank payouts
-                    </span>
-                  </li>
-
-                  {/* Support */}
-                  <li className="flex items-start gap-3">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
-                    <span className="text-xs font-bold text-[#1E293B]">
-                      {isFeatured ? "Priority merchant onboarding support" : "Standard seller help desk"}
-                    </span>
-                  </li>
-                </ul>
+                  </ul>
+                </div>
               </div>
 
-              {/* Action Button */}
-              <div className="border-t border-[#F1F5F9] bg-[#FAFAFA] p-6 sm:p-7 pt-4">
-                <Button
-                  asChild
-                  size="lg"
-                  className={`w-full h-12 text-sm font-black transition-all group ${
+              {/* Action Button Footer - Aligned at bottom */}
+              <div className="mt-auto border-t border-[#F1F5F9] bg-[#FAFAFA] p-6 sm:p-7">
+                <Link
+                  href={`/seller/register?mode=retail&plan=${plan.id}`}
+                  className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-black transition-all duration-150 cursor-pointer active:scale-[0.98] ${
                     isFeatured
-                      ? "bg-[#ED3500] text-white hover:bg-[#D42F00] shadow-md shadow-[#ED3500]/25"
-                      : "border-2 border-[#0F172A] bg-white text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
+                      ? "bg-[#ED3500] hover:bg-[#D42F00] shadow-md shadow-[#ED3500]/25 !text-white [&_*]:!text-white"
+                      : "border-2 border-[#ED3500] bg-white hover:bg-[#ED3500] !text-[#ED3500] hover:!text-white [&_*]:!text-[#ED3500] hover:[&_*]:!text-white"
                   }`}
+                  style={isFeatured ? { color: "#ffffff" } : undefined}
                 >
-                  <Link href={`/seller/register?mode=${mode.toLowerCase()}&plan=${plan.id}`}>
-                    <span>Select Plan</span>
-                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                  </Link>
-                </Button>
+                  <span className="text-sm font-extrabold">Select Plan</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* ── Trust Pillars & FAQ Callout ────────────────────────────────────── */}
+      {/* ── Trust Pillars & Enterprise Callout ─────────────────────────────── */}
       <div className="mx-auto max-w-7xl pt-6">
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-xs">

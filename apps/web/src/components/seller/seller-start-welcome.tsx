@@ -48,7 +48,7 @@ export function SellerStartWelcome({
       ],
     },
     {
-      href: "/seller/choose-plan?mode=service",
+      href: "/seller/choose-plan",
       title: "Service Professional",
       badge: "Services Only",
       tagline: "On-demand & skilled services",
@@ -66,7 +66,7 @@ export function SellerStartWelcome({
       ],
     },
     {
-      href: "/seller/choose-plan?mode=both",
+      href: "/seller/choose-plan",
       title: "Retail + Services",
       badge: "Recommended for Enterprises",
       tagline: "Unified merchant profile",
