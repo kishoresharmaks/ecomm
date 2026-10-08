@@ -6,10 +6,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
   Circle,
   CircleDot,
   CreditCard,
+  ExternalLink,
   FileText,
   Loader2,
   LogIn,
@@ -148,6 +150,10 @@ export function SellerRegistrationForm({
   const [consentOpen, setConsentOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [sellerPolicyAccepted, setSellerPolicyAccepted] = useState(false);
+  const [termsRead, setTermsRead] = useState(false);
+  const [privacyRead, setPrivacyRead] = useState(false);
+  const [sellerPolicyRead, setSellerPolicyRead] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   const sellerQuery = useQuery({
@@ -295,6 +301,7 @@ export function SellerRegistrationForm({
 
     setTermsAccepted(false);
     setPrivacyAccepted(false);
+    setSellerPolicyAccepted(false);
     setConsentOpen(true);
   }
 
@@ -360,7 +367,13 @@ export function SellerRegistrationForm({
   }
 
   function confirmPolicyConsent() {
-    if (!termsAccepted || !privacyAccepted || !formRef.current || onboardingMutation.isPending) {
+    if (
+      !termsAccepted ||
+      !privacyAccepted ||
+      !sellerPolicyAccepted ||
+      !formRef.current ||
+      onboardingMutation.isPending
+    ) {
       return;
     }
 
@@ -929,9 +942,17 @@ export function SellerRegistrationForm({
       open={consentOpen}
       termsAccepted={termsAccepted}
       privacyAccepted={privacyAccepted}
+      sellerPolicyAccepted={sellerPolicyAccepted}
+      termsRead={termsRead}
+      privacyRead={privacyRead}
+      sellerPolicyRead={sellerPolicyRead}
       submitting={onboardingMutation.isPending}
       onTermsChange={setTermsAccepted}
       onPrivacyChange={setPrivacyAccepted}
+      onSellerPolicyChange={setSellerPolicyAccepted}
+      onTermsReadChange={setTermsRead}
+      onPrivacyReadChange={setPrivacyRead}
+      onSellerPolicyReadChange={setSellerPolicyRead}
       onClose={() => setConsentOpen(false)}
       onConfirm={confirmPolicyConsent}
     />
@@ -943,22 +964,38 @@ function SellerPolicyConsentDialog({
   open,
   termsAccepted,
   privacyAccepted,
+  sellerPolicyAccepted,
+  termsRead,
+  privacyRead,
+  sellerPolicyRead,
   submitting,
   onTermsChange,
   onPrivacyChange,
+  onSellerPolicyChange,
+  onTermsReadChange,
+  onPrivacyReadChange,
+  onSellerPolicyReadChange,
   onClose,
   onConfirm,
 }: {
   open: boolean;
   termsAccepted: boolean;
   privacyAccepted: boolean;
+  sellerPolicyAccepted: boolean;
+  termsRead: boolean;
+  privacyRead: boolean;
+  sellerPolicyRead: boolean;
   submitting: boolean;
   onTermsChange: (accepted: boolean) => void;
   onPrivacyChange: (accepted: boolean) => void;
+  onSellerPolicyChange: (accepted: boolean) => void;
+  onTermsReadChange: (read: boolean) => void;
+  onPrivacyReadChange: (read: boolean) => void;
+  onSellerPolicyReadChange: (read: boolean) => void;
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const consentComplete = termsAccepted && privacyAccepted;
+  const consentComplete = termsAccepted && privacyAccepted && sellerPolicyAccepted;
 
   return (
     <Dialog open={open} onClose={onClose} className="relative z-[140]">
@@ -984,7 +1021,7 @@ function SellerPolicyConsentDialog({
                     Accept policies to submit
                   </DialogTitle>
                   <Description className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
-                    Review and accept both policies before sending your 1HandIndia Seller Hub application.
+                    Review and accept all three policies before sending your 1HandIndia Seller Hub application. Please click each policy link to read and unlock its acceptance checkbox.
                   </Description>
                 </div>
               </div>
@@ -994,47 +1031,149 @@ function SellerPolicyConsentDialog({
               </div>
 
               <div className="mt-5 grid gap-3">
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#E1E6EB] p-4 transition hover:border-[#ED3500]/50 hover:bg-[#FFFCFB]">
-                  <input
-                    type="checkbox"
-                    checked={termsAccepted}
-                    onChange={(event) => onTermsChange(event.target.checked)}
-                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#ED3500]"
-                  />
-                  <span className="text-sm font-semibold leading-6 text-[#526271]">
-                    I have read and accept the{" "}
-                    <Link
-                      href="/terms-and-conditions"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-black text-[#123A5A] underline decoration-[#ED3500]/40 underline-offset-2 hover:text-[#ED3500]"
-                    >
-                      Terms and Conditions
-                    </Link>
-                    .
-                  </span>
-                </label>
+                {/* 1. Terms and Conditions */}
+                <div
+                  className={`flex flex-col gap-2 rounded-xl border p-4 transition ${
+                    termsAccepted
+                      ? "border-[#ED3500] bg-[#FFF8F5]"
+                      : termsRead
+                        ? "border-[#D8E2EA] bg-[#FFFCFB]"
+                        : "border-[#E1E6EB] bg-[#F8FAFC]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <label className={`flex items-start gap-3 select-none ${termsRead ? "cursor-pointer" : "cursor-not-allowed opacity-75"}`}>
+                      <input
+                        type="checkbox"
+                        checked={termsAccepted}
+                        disabled={!termsRead}
+                        onChange={(event) => onTermsChange(event.target.checked)}
+                        className="mt-0.5 h-5 w-5 shrink-0 accent-[#ED3500] disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm font-semibold leading-6 text-[#344054]">
+                        I have read and accept the{" "}
+                        <Link
+                          href="/terms-and-conditions"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => onTermsReadChange(true)}
+                          className="inline-flex items-center gap-1 font-black text-[#123A5A] underline decoration-[#ED3500]/40 underline-offset-2 hover:text-[#ED3500]"
+                        >
+                          Terms and Conditions
+                          <ExternalLink className="h-3 w-3 inline" />
+                        </Link>
+                        .
+                      </span>
+                    </label>
+                  </div>
+                  <div className="pl-8">
+                    {termsRead ? (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#E9F7F1] px-2 py-0.5 text-[11px] font-bold text-[#0F8A5F]">
+                        <Check className="h-3 w-3" /> Reviewed & unlocked
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#FFF0EC] px-2 py-0.5 text-[11px] font-bold text-[#ED3500]">
+                        Click link to review & unlock
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#E1E6EB] p-4 transition hover:border-[#ED3500]/50 hover:bg-[#FFFCFB]">
-                  <input
-                    type="checkbox"
-                    checked={privacyAccepted}
-                    onChange={(event) => onPrivacyChange(event.target.checked)}
-                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#ED3500]"
-                  />
-                  <span className="text-sm font-semibold leading-6 text-[#526271]">
-                    I have read and accept the{" "}
-                    <Link
-                      href="/privacy-policy"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-black text-[#123A5A] underline decoration-[#ED3500]/40 underline-offset-2 hover:text-[#ED3500]"
-                    >
-                      Privacy Policy
-                    </Link>
-                    .
-                  </span>
-                </label>
+                {/* 2. Privacy Policy */}
+                <div
+                  className={`flex flex-col gap-2 rounded-xl border p-4 transition ${
+                    privacyAccepted
+                      ? "border-[#ED3500] bg-[#FFF8F5]"
+                      : privacyRead
+                        ? "border-[#D8E2EA] bg-[#FFFCFB]"
+                        : "border-[#E1E6EB] bg-[#F8FAFC]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <label className={`flex items-start gap-3 select-none ${privacyRead ? "cursor-pointer" : "cursor-not-allowed opacity-75"}`}>
+                      <input
+                        type="checkbox"
+                        checked={privacyAccepted}
+                        disabled={!privacyRead}
+                        onChange={(event) => onPrivacyChange(event.target.checked)}
+                        className="mt-0.5 h-5 w-5 shrink-0 accent-[#ED3500] disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm font-semibold leading-6 text-[#344054]">
+                        I have read and accept the{" "}
+                        <Link
+                          href="/privacy-policy"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => onPrivacyReadChange(true)}
+                          className="inline-flex items-center gap-1 font-black text-[#123A5A] underline decoration-[#ED3500]/40 underline-offset-2 hover:text-[#ED3500]"
+                        >
+                          Privacy Policy
+                          <ExternalLink className="h-3 w-3 inline" />
+                        </Link>
+                        .
+                      </span>
+                    </label>
+                  </div>
+                  <div className="pl-8">
+                    {privacyRead ? (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#E9F7F1] px-2 py-0.5 text-[11px] font-bold text-[#0F8A5F]">
+                        <Check className="h-3 w-3" /> Reviewed & unlocked
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#FFF0EC] px-2 py-0.5 text-[11px] font-bold text-[#ED3500]">
+                        Click link to review & unlock
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Seller Policy */}
+                <div
+                  className={`flex flex-col gap-2 rounded-xl border p-4 transition ${
+                    sellerPolicyAccepted
+                      ? "border-[#ED3500] bg-[#FFF8F5]"
+                      : sellerPolicyRead
+                        ? "border-[#D8E2EA] bg-[#FFFCFB]"
+                        : "border-[#E1E6EB] bg-[#F8FAFC]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <label className={`flex items-start gap-3 select-none ${sellerPolicyRead ? "cursor-pointer" : "cursor-not-allowed opacity-75"}`}>
+                      <input
+                        type="checkbox"
+                        checked={sellerPolicyAccepted}
+                        disabled={!sellerPolicyRead}
+                        onChange={(event) => onSellerPolicyChange(event.target.checked)}
+                        className="mt-0.5 h-5 w-5 shrink-0 accent-[#ED3500] disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm font-semibold leading-6 text-[#344054]">
+                        I have read and accept the{" "}
+                        <Link
+                          href="/seller-policy"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => onSellerPolicyReadChange(true)}
+                          className="inline-flex items-center gap-1 font-black text-[#123A5A] underline decoration-[#ED3500]/40 underline-offset-2 hover:text-[#ED3500]"
+                        >
+                          Seller Policy
+                          <ExternalLink className="h-3 w-3 inline" />
+                        </Link>
+                        .
+                      </span>
+                    </label>
+                  </div>
+                  <div className="pl-8">
+                    {sellerPolicyRead ? (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#E9F7F1] px-2 py-0.5 text-[11px] font-bold text-[#0F8A5F]">
+                        <Check className="h-3 w-3" /> Reviewed & unlocked
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#FFF0EC] px-2 py-0.5 text-[11px] font-bold text-[#ED3500]">
+                        Click link to review & unlock
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

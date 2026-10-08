@@ -26,6 +26,7 @@ import {
   Smartphone,
   Check,
 } from "lucide-react";
+import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 
 export function SellerStartWelcome({
   message = "Start selling products, services, or both through one trusted merchant platform.",
@@ -210,7 +211,7 @@ export function SellerStartWelcome({
           {/* Right: Actions */}
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             <Link
-              href="/support"
+              href="/contact?topic=seller"
               className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-[#475467] transition-colors hover:text-[#101828] sm:text-sm"
             >
               <HelpCircle className="h-4 w-4 text-[#667085]" />
@@ -642,115 +643,8 @@ export function SellerStartWelcome({
         </div>
       </section>
 
-      {/* ── 8. PROFESSIONAL 5-COLUMN FOOTER ─────────────────────────────────── */}
-      <footer className="bg-white py-12 sm:py-16 text-[#667085] text-xs">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-5">
-            {/* Col 1: Brand */}
-            <div className="space-y-4 lg:col-span-2">
-              <Link href="/seller" className="flex items-center gap-2.5">
-                <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg bg-white ring-1 ring-[#F1E5E0]">
-                  <Image
-                    src="/brand/1handindia_logo.webp"
-                    alt="1HandIndia Logo"
-                    width={32}
-                    height={32}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <span className="text-base font-black text-[#101828]">1HandIndia</span>
-                <span className="text-xs font-bold text-[#ED3500]">Seller Hub</span>
-              </Link>
-              <p className="max-w-sm text-xs leading-relaxed text-[#667085]">
-                Empowering Indian merchants with a trusted, transparent marketplace for products,
-                services, and B2B wholesale procurement.
-              </p>
-              <div className="flex items-center gap-4 text-[#98A2B3] pt-2">
-                <span className="font-bold text-[#475467]">𝕏</span>
-                <span className="font-bold text-[#475467]">Facebook</span>
-                <span className="font-bold text-[#475467]">Instagram</span>
-                <span className="font-bold text-[#475467]">LinkedIn</span>
-              </div>
-            </div>
-
-            {/* Col 2: 1HandIndia */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-[#101828]">1HandIndia</h4>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="/seller" className="hover:text-[#ED3500] transition-colors">
-                    Seller Hub
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/about" className="hover:text-[#ED3500] transition-colors">
-                    About
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/contact" className="hover:text-[#ED3500] transition-colors">
-                    Contact
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            {/* Col 3: Sell on 1HandIndia */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-[#101828]">Sell on 1HandIndia</h4>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="/seller/choose-plan?mode=retail" className="hover:text-[#ED3500] transition-colors">
-                    Retail Merchant
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/seller/choose-plan" className="hover:text-[#ED3500] transition-colors">
-                    Service Professional
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/seller/choose-plan" className="hover:text-[#ED3500] transition-colors">
-                    Retail + Services
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            {/* Col 4: Seller Resources & Legal */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-[#101828]">Seller Resources</h4>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="/support" className="hover:text-[#ED3500] transition-colors">
-                    Help Desk
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/seller-policy" className="hover:text-[#ED3500] transition-colors">
-                    Seller Policy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/terms-and-conditions" className="hover:text-[#ED3500] transition-colors">
-                    Terms of Service
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/privacy-policy" className="hover:text-[#ED3500] transition-colors">
-                    Privacy Policy
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-12 border-t border-[#EAECF0] pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-[#98A2B3]">
-            <p>© {new Date().getFullYear()} 1HandIndia Seller Hub. All rights reserved.</p>
-            <p>Made with pride for Indian merchants.</p>
-          </div>
-        </div>
-      </footer>
+      {/* ── 8. WEBSITE FOOTER ─────────────────────────────────────────────────── */}
+      <StorefrontFooter />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   Gem,
 } from "lucide-react";
 import { listSellerSubscriptionPlans, type SellerSubscriptionPlan } from "@/lib/seller-api";
+import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 
 // Fallback plans adhering to the exact production database configuration & reference design
 const DEFAULT_RETAIL_PLANS: SellerSubscriptionPlan[] = [
@@ -158,7 +159,7 @@ export function ChoosePlanClient({ initialMode: _initialMode }: { initialMode?: 
           {/* Right: Actions */}
           <div className="flex items-center gap-3 sm:gap-4">
             <Link
-              href="/support"
+              href="/contact?topic=seller"
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#475467] transition-colors hover:text-[#101828] sm:text-sm"
             >
               <HelpCircle className="h-4 w-4 text-[#667085]" />
@@ -508,23 +509,10 @@ export function ChoosePlanClient({ initialMode: _initialMode }: { initialMode?: 
             </div>
           </div>
         </div>
-
-        {/* ── FOOTER NOTE ───────────────────────────────────────────────────── */}
-        <div className="flex flex-col items-center justify-between gap-4 border-t border-[#EAECF0] pt-6 text-xs text-[#667085] sm:flex-row">
-          <p>© {new Date().getFullYear()} 1HandIndia Seller Hub. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <Link href="/terms-and-conditions" className="hover:text-[#101828] transition-colors">
-              Terms & Conditions
-            </Link>
-            <Link href="/seller-policy" className="hover:text-[#101828] transition-colors">
-              Seller Policy
-            </Link>
-            <Link href="/support" className="hover:text-[#101828] transition-colors">
-              Support
-            </Link>
-          </div>
-        </div>
       </main>
+
+      {/* ── WEBSITE FOOTER ────────────────────────────────────────────────── */}
+      <StorefrontFooter />
     </div>
   );
 }

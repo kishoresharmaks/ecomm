@@ -50,6 +50,7 @@ import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
+import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { IndihubApiError, adminCookieSessionMarker, indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
 import {
@@ -423,7 +424,7 @@ function SellerPortalHeader({
             Storefront
           </Link>
           <Link
-            href="/contact"
+            href="/contact?topic=seller"
             className="hidden items-center gap-1.5 text-xs font-bold text-[#64748B] transition hover:text-[#ED3500] sm:inline-flex"
           >
             Help Desk
@@ -453,23 +454,7 @@ function SellerPortalHeader({
 }
 
 function SellerPortalFooter() {
-  return (
-    <footer className="border-t border-[#E2E8F0] bg-white py-8 text-center text-xs text-[#64748B]">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="flex flex-wrap items-center justify-center gap-6 font-bold text-[#475467]">
-          <Link href="/seller" className="hover:text-[#ED3500]">Seller Home</Link>
-          <Link href="/seller/choose-plan" className="hover:text-[#ED3500]">Plans & Pricing</Link>
-          <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Seller Policy</Link>
-          <Link href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Terms of Service</Link>
-          <Link href="https://1handindia.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Privacy Policy</Link>
-          <Link href="/contact" className="hover:text-[#ED3500]">Merchant Help Desk</Link>
-        </div>
-        <p className="mt-4 text-[#94A3B8]">
-          &copy; {new Date().getFullYear()} BEES HUB FARMLAND PRIVATE LIMITED. 1HandIndia Seller Hub &mdash; Verified Indian Merchant Portal.
-        </p>
-      </div>
-    </footer>
-  );
+  return <StorefrontFooter />;
 }
 
 function SellerNavLink({

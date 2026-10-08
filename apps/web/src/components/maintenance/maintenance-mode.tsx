@@ -182,7 +182,7 @@ function MaintenancePage({
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Button asChild className="h-11 rounded-full bg-[#ED3500] px-6 font-bold text-white shadow-lg shadow-[#ED3500]/20 hover:bg-[#D93000]">
-                  <Link href="/support">
+                  <Link href="/contact">
                     <LifeBuoy className="mr-2 h-4 w-4" aria-hidden="true" />
                     Contact support
                   </Link>
@@ -197,7 +197,7 @@ function MaintenancePage({
                   </Button>
                 ) : scope === "delivery" ? (
                   <Button asChild variant="outline" className="h-11 rounded-full border-[#D8E2EA] px-6 font-bold text-[#1F2933] hover:bg-[#F8FAFC]">
-                    <Link href="/support">Delivery help</Link>
+                    <Link href="/contact?topic=delivery">Delivery help</Link>
                   </Button>
                 ) : null}
               </div>

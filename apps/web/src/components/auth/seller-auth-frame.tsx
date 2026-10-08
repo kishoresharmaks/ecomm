@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { ArrowRight, Headphones, Store } from "lucide-react";
 import { Button } from "@indihub/ui";
 
+import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+
 export function SellerAuthFrame({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-[#FAF8F5] text-[#1F2933]">
@@ -42,7 +44,7 @@ export function SellerAuthFrame({ children }: { children: ReactNode }) {
               Visit Storefront
             </Link>
             <Link
-              href="/contact"
+              href="/contact?topic=seller"
               className="hidden items-center gap-1.5 text-xs font-bold text-[#64748B] transition hover:text-[#ED3500] sm:inline-flex"
             >
               <Headphones className="h-3.5 w-3.5" aria-hidden="true" />
@@ -63,22 +65,8 @@ export function SellerAuthFrame({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      {/* ── Seller Hub Clean Footer ──────────────────────────────────────── */}
-      <footer className="border-t border-[#E2E8F0] bg-white py-8 text-center text-xs text-[#64748B]">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex flex-wrap items-center justify-center gap-6 font-bold text-[#475467]">
-            <Link href="/seller" className="hover:text-[#ED3500]">Seller Home</Link>
-            <Link href="/seller/choose-plan" className="hover:text-[#ED3500]">Selling Plans</Link>
-            <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Seller Policy</Link>
-            <Link href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Terms of Service</Link>
-            <Link href="https://1handindia.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Privacy Policy</Link>
-            <Link href="/contact" className="hover:text-[#ED3500]">Merchant Help Desk</Link>
-          </div>
-          <p className="mt-4 text-[#94A3B8]">
-            &copy; {new Date().getFullYear()} BEES HUB FARMLAND PRIVATE LIMITED. 1HandIndia Seller Hub &mdash; Verified Indian Merchant Portal.
-          </p>
-        </div>
-      </footer>
+      {/* ── Website Footer ──────────────────────────────────────────────── */}
+      <StorefrontFooter />
     </div>
   );
 }
