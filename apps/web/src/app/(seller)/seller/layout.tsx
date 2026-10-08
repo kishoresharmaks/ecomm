@@ -34,7 +34,15 @@ export default async function SellerRouteLayout({ children }: Readonly<{ childre
     }
   }
 
-  if (isPublicSellerRoute) {
+  const isStandaloneRoute =
+    pathname === "/seller/sign-in" ||
+    pathname.startsWith("/seller/sign-in/") ||
+    pathname === "/seller/sign-up" ||
+    pathname.startsWith("/seller/sign-up/") ||
+    pathname === "/seller/choose-plan" ||
+    pathname.startsWith("/seller/choose-plan");
+
+  if (isStandaloneRoute) {
     return children;
   }
 

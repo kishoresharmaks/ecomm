@@ -159,7 +159,6 @@ function SellerWorkspacePage({
 
 function isStandaloneSellerPage(pathname: string) {
   return (
-    pathname === "/seller" ||
     pathname === "/seller/choose-plan" ||
     pathname.startsWith("/seller/choose-plan/") ||
     pathname === "/seller/sign-in" ||
@@ -198,6 +197,17 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
   const isImpersonating = sellerAuth.mode === "impersonation";
 
   if (isStandaloneSellerPage(pathname)) {
+    return (
+      <SellerWorkspaceRootContext.Provider value>
+        <MaintenanceGate scope="seller">
+          {children}
+        </MaintenanceGate>
+      </SellerWorkspaceRootContext.Provider>
+    );
+  }
+
+  // When signed out on the public /seller landing page, render without the seller portal frame/sidebar
+  if (pathname === "/seller" && (isSignedOut || !sellerAuth.enabled)) {
     return (
       <SellerWorkspaceRootContext.Provider value>
         <MaintenanceGate scope="seller">
