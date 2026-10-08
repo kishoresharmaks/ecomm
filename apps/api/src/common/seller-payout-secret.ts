@@ -54,7 +54,11 @@ export function sellerPayoutValue(
   encrypted: string | null | undefined,
   legacyPlaintext: string | null | undefined,
 ) {
-  return decryptSellerPayoutValue(encrypted) ?? legacyPlaintext?.trim() ?? null;
+  try {
+    return decryptSellerPayoutValue(encrypted) ?? legacyPlaintext?.trim() ?? null;
+  } catch {
+    return legacyPlaintext?.trim() ?? null;
+  }
 }
 
 export function sellerPayoutLast4(value: string | null) {

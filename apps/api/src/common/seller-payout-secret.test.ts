@@ -33,4 +33,20 @@ describe("seller payout encryption", () => {
       "SELLER_PAYOUT_DATA_ENCRYPTION_KEY",
     );
   });
+
+  it("gracefully falls back when stored encrypted data cannot be decrypted due to key mismatch", () => {
+    process.env.SELLER_PAYOUT_DATA_ENCRYPTION_KEY =
+      "test-only-seller-payout-key-at-least-32-characters";
+    const encrypted = encryptSellerPayoutValue("1234567890");
+
+    // Key rotates / changes
+    process.env.SELLER_PAYOUT_DATA_ENCRYPTION_KEY =
+      "different-key-after-rotation-at-least-32-chars";
+
+    expect(() => decryptSellerPayoutValue(encrypted)).toThrow(
+      "Stored seller payout data could not be decrypted.",
+    );
+    expect(sellerPayoutValue(encrypted, null)).toBeNull();
+    expect(sellerPayoutValue(encrypted, "fallback-legacy")).toBe("fallback-legacy");
+  });
 });
