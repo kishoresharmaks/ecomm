@@ -1364,24 +1364,45 @@ function SellerSignInGate({
   }
 
   return (
-    <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <StatusBadge tone="warning">Sign in required</StatusBadge>
-          <h2 className="mt-4 text-2xl font-black text-[#1F2933]">Start seller onboarding</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#667085]">
-            Use your 1HandIndia account to submit seller details. After sign in, you will return to
-            this onboarding page automatically.
+    <section className="rounded-3xl border border-[#E2E8F0] bg-white p-6 sm:p-10 shadow-sm">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="max-w-2xl">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#ED3500]/20 bg-[#FFF4F0] px-3.5 py-1 text-xs font-black text-[#ED3500]">
+            <ShieldCheck className="h-4 w-4" />
+            Merchant Authentication Required
+          </div>
+          <h2 className="mt-4 text-2xl font-black text-[#0F172A] sm:text-3xl">
+            Start your 1HandIndia Seller Onboarding
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[#64748B] sm:text-base">
+            Please sign in or create your verified seller account to submit store details, bank information,
+            and KYC documents. Your selected plan and category settings are saved automatically.
           </p>
+          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-[#F1F5F9] bg-[#F8FAFC] p-3 text-xs font-semibold text-[#475467]">
+              <span className="block font-black text-[#0F172A]">1. Sign In / Register</span>
+              Verify phone or email
+            </div>
+            <div className="rounded-xl border border-[#F1F5F9] bg-[#F8FAFC] p-3 text-xs font-semibold text-[#475467]">
+              <span className="block font-black text-[#0F172A]">2. Store & Tax Profile</span>
+              GSTIN, PAN & bank details
+            </div>
+            <div className="rounded-xl border border-[#F1F5F9] bg-[#F8FAFC] p-3 text-xs font-semibold text-[#475467]">
+              <span className="block font-black text-[#0F172A]">3. Start Selling</span>
+              Rapid verification & launch
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild>
+        <div className="flex flex-col gap-3 sm:flex-row lg:flex-col shrink-0">
+          <Button asChild size="lg" className="bg-[#ED3500] font-black text-white shadow-sm hover:bg-[#D42F00]">
             <Link href={`/seller/sign-in?redirect_url=${encodeURIComponent(returnPath)}`}>
-              <LogIn size={16} /> Sign in
+              <LogIn className="mr-2 h-4 w-4" /> Sign In to Continue
             </Link>
           </Button>
-          <Button asChild variant="outline">
-            <Link href={`/sign-up?redirect_url=${encodeURIComponent(returnPath)}`}>Create account</Link>
+          <Button asChild variant="outline" size="lg" className="border-[#CBD5E1] font-bold text-[#334155] hover:bg-[#F8FAFC]">
+            <Link href={`/seller/sign-up?redirect_url=${encodeURIComponent(returnPath)}`}>
+              Create Merchant Account
+            </Link>
           </Button>
         </div>
       </div>

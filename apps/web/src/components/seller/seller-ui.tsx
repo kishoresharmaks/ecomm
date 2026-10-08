@@ -2,14 +2,13 @@
 
 import { SignOutButton } from "@clerk/nextjs";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   AlertCircle,
-  ArrowRight,
   BadgePercent,
   BarChart3,
   Boxes,
-  CheckCircle2,
   ClipboardList,
   CreditCard,
   Home,
@@ -49,7 +48,6 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
-import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { IndihubApiError, adminCookieSessionMarker, indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
@@ -207,11 +205,20 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
             {showSidebar ? (
             <div className="sticky top-0 z-30 border-b border-[#D9E2EA] bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
               <div className="flex items-center justify-between gap-3">
-                <Link href="/seller" className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#ED3500] text-sm font-black text-white">1HI</span>
+                <Link href="/seller" className="flex items-center gap-2.5">
+                  <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-[#F1E5E0]">
+                    <Image
+                      src="/brand/1handindia_logo.webp"
+                      alt="1HandIndia Logo"
+                      width={36}
+                      height={36}
+                      priority
+                      className="h-full w-full object-cover"
+                    />
+                  </span>
                   <span>
-                    <span className="block text-base font-black text-[#123A5A]">1HandIndia</span>
-                    <span className="block text-xs font-bold text-[#ED3500]">Seller Center</span>
+                    <span className="block text-base font-black leading-tight text-[#123A5A]">1HandIndia</span>
+                    <span className="block text-xs font-bold text-[#ED3500]">Seller Hub</span>
                   </span>
                 </Link>
                 <Button type="button" variant="outline" size="sm" onClick={() => setMobileOpen((current) => !current)} aria-expanded={mobileOpen}>
@@ -237,6 +244,8 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
                 </nav>
               ) : null}
             </div>
+            ) : pathname !== "/seller" ? (
+              <SellerPortalHeader profile={profileQuery.data} isSignedOut={isSignedOut} />
             ) : null}
 
             <div
@@ -251,7 +260,7 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
             >
               {missingCapability ? <SellerCapabilityUnavailable capability={missingCapability} /> : children}
             </div>
-            {!showSidebar ? <StorefrontFooter /> : null}
+            {!showSidebar && pathname !== "/seller" ? <SellerPortalFooter /> : null}
             </section>
           </div>
         </main>
@@ -278,8 +287,19 @@ function SellerSidebar({
   return (
     <div className="sticky top-0 flex h-screen min-h-0 flex-col overflow-hidden px-3 py-3">
       <Link href="/seller" className="flex shrink-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.05] p-3">
-        <span className="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-md bg-[#ED3500] text-sm font-black text-white">
-          {logoUrl ? <StorefrontImage src={logoUrl} alt={storeName} sizes="44px" fallbackLabel={storeName} /> : "1HI"}
+        <span className="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl bg-white text-sm font-black text-white shadow-sm ring-1 ring-white/20">
+          {logoUrl ? (
+            <StorefrontImage src={logoUrl} alt={storeName} sizes="44px" fallbackLabel={storeName} />
+          ) : (
+            <Image
+              src="/brand/1handindia_logo.webp"
+              alt="1HandIndia Logo"
+              width={44}
+              height={44}
+              priority
+              className="h-full w-full object-cover"
+            />
+          )}
         </span>
         <span className="min-w-0">
           <span className="block truncate text-base font-black leading-tight">{storeName}</span>
@@ -344,6 +364,91 @@ function SellerLogoutButton({ className, onClick }: { className?: string; onClic
         Logout
       </Button>
     </SignOutButton>
+  );
+}
+
+function SellerPortalHeader({
+  profile,
+  isSignedOut,
+}: {
+  profile?: SellerProfile | undefined;
+  isSignedOut: boolean;
+}) {
+  return (
+    <header className="sticky top-0 z-40 w-full border-b border-[#E2E8F0] bg-white/95 px-4 py-3 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 sm:px-2">
+        <Link href="/seller" className="flex items-center gap-3 group">
+          <span className="relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white shadow-[0_8px_20px_rgba(237,53,0,0.12)] ring-1 ring-[#F1E5E0] transition-transform group-hover:scale-105">
+            <Image
+              src="/brand/1handindia_logo.webp"
+              alt="1HandIndia Logo"
+              width={40}
+              height={40}
+              priority
+              className="h-full w-full object-cover"
+            />
+          </span>
+          <div>
+            <span className="block text-base font-black leading-tight text-[#0F172A]">1HandIndia</span>
+            <span className="block text-xs font-bold text-[#ED3500]">Seller Hub</span>
+          </div>
+        </Link>
+
+        <div className="flex items-center gap-3 sm:gap-5">
+          <Link
+            href="/"
+            className="hidden items-center gap-1.5 text-xs font-bold text-[#64748B] transition hover:text-[#ED3500] sm:inline-flex"
+          >
+            <Store className="h-3.5 w-3.5" aria-hidden="true" />
+            Storefront
+          </Link>
+          <Link
+            href="/contact"
+            className="hidden items-center gap-1.5 text-xs font-bold text-[#64748B] transition hover:text-[#ED3500] sm:inline-flex"
+          >
+            Help Desk
+          </Link>
+
+          {isSignedOut ? (
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm" className="font-bold border-[#CBD5E1] text-[#334155] hover:bg-[#F8FAFC]">
+                <Link href="/seller/sign-in">Sign In</Link>
+              </Button>
+              <Button asChild size="sm" className="bg-[#ED3500] font-bold text-white shadow-sm hover:bg-[#D42F00]">
+                <Link href="/seller/choose-plan?mode=retail">Start Selling</Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="hidden text-xs font-bold text-[#475467] md:inline-block">
+                {profile?.storeName ?? "Seller Portal"}
+              </span>
+              <SellerLogoutButton />
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function SellerPortalFooter() {
+  return (
+    <footer className="border-t border-[#E2E8F0] bg-white py-8 text-center text-xs text-[#64748B]">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-center gap-6 font-bold text-[#475467]">
+          <Link href="/seller" className="hover:text-[#ED3500]">Seller Home</Link>
+          <Link href="/seller/choose-plan" className="hover:text-[#ED3500]">Plans & Pricing</Link>
+          <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Seller Policy</Link>
+          <Link href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Terms of Service</Link>
+          <Link href="https://1handindia.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-[#ED3500]">Privacy Policy</Link>
+          <Link href="/contact" className="hover:text-[#ED3500]">Merchant Help Desk</Link>
+        </div>
+        <p className="mt-4 text-[#94A3B8]">
+          &copy; {new Date().getFullYear()} BEES HUB FARMLAND PRIVATE LIMITED. 1HandIndia Seller Hub &mdash; Verified Indian Merchant Portal.
+        </p>
+      </div>
+    </footer>
   );
 }
 

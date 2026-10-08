@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import type { Route } from "next";
 import { useState } from "react";
 import {
@@ -167,9 +168,16 @@ export function SellerStartWelcome({
       {/* ── Top Seller Portal Navigation Bar ───────────────────────────────── */}
       <header className="sticky top-0 z-40 w-full border-b border-[#E2E8F0] bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          <Link href="/seller" className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#ED3500] text-sm font-black text-white shadow-sm">
-              1HI
+          <Link href="/seller" className="flex items-center gap-3 group">
+            <span className="relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white shadow-[0_8px_20px_rgba(237,53,0,0.14)] ring-1 ring-[#F1E5E0] transition-transform group-hover:scale-105">
+              <Image
+                src="/brand/1handindia_logo.webp"
+                alt="1HandIndia Logo"
+                width={40}
+                height={40}
+                priority
+                className="h-full w-full object-cover"
+              />
             </span>
             <div>
               <span className="block text-base font-black leading-tight text-[#0F172A]">

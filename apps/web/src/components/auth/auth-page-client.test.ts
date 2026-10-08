@@ -5,6 +5,7 @@ describe("auth page routing presentation", () => {
   it("selects the portal identity from explicit audience and redirect context", () => {
     expect(resolveAuthAudience("customer", "/account")).toBe("customer");
     expect(resolveAuthAudience("customer", "/seller/register")).toBe("seller");
+    expect(resolveAuthAudience("customer", "/seller/choose-plan")).toBe("seller");
     expect(resolveAuthAudience("customer", "/b2b/register")).toBe("b2b");
     expect(resolveAuthAudience("seller", "/account")).toBe("seller");
   });

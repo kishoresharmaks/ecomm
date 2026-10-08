@@ -17,6 +17,7 @@ import {
 import { usePathname, useSearchParams } from "next/navigation";
 import { Button } from "@indihub/ui";
 import { StorefrontFrame } from "@/components/storefront/storefront-frame";
+import { SellerAuthFrame } from "./seller-auth-frame";
 import { resolveAuthAudience, safeRedirectPath, type AuthAudience } from "./auth-page-routing";
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -124,7 +125,7 @@ export function AuthPageClient({
   const routeIsSeller = pathname.startsWith("/seller");
   const routeIsB2B = pathname.startsWith("/b2b");
   const signInPath = routeIsSeller ? "/seller/sign-in" : routeIsB2B ? "/b2b/sign-in" : "/sign-in";
-  const signUpPath = routeIsB2B ? "/b2b/sign-up" : "/sign-up";
+  const signUpPath = routeIsSeller ? "/seller/sign-up" : routeIsB2B ? "/b2b/sign-up" : "/sign-up";
   const switchPath = mode === "sign-in" ? signUpPath : signInPath;
   const switchHref = `${switchPath}?redirect_url=${encodeURIComponent(redirectUrl)}`;
   const clerkProps = {
@@ -133,56 +134,84 @@ export function AuthPageClient({
     fallbackRedirectUrl: redirectUrl,
   } as const;
 
-  return (
-    <StorefrontFrame>
-      <section className="bg-[#FFFCFB] px-4 py-6 sm:px-6 sm:py-10 lg:py-14">
-        <div className="mx-auto grid max-w-6xl overflow-hidden rounded-[2rem] border border-[#F0E4DF] bg-white shadow-[0_24px_80px_rgba(80,37,20,0.10)] lg:min-h-[690px] lg:grid-cols-[1.08fr_0.92fr]">
-          <AuthStory presentation={presentation} />
+  const authCard = (
+    <section className="bg-[#FFFCFB] px-4 py-6 sm:px-6 sm:py-10 lg:py-14 w-full">
+      <div className="mx-auto grid max-w-6xl overflow-hidden rounded-[2rem] border border-[#F0E4DF] bg-white shadow-[0_24px_80px_rgba(80,37,20,0.10)] lg:min-h-[690px] lg:grid-cols-[1.08fr_0.92fr]">
+        <AuthStory presentation={presentation} audience={resolvedAudience} />
 
-          <div className="flex items-center bg-white px-5 py-8 sm:px-10 sm:py-12 lg:px-12">
-            <div className="mx-auto w-full max-w-[430px]">
-              <div className="mb-7 flex items-center justify-between gap-4 border-b border-[#EEF0F2] pb-5">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">{presentation.eyebrow}</p>
-                  <p className="mt-1 text-sm font-semibold text-[#667085]">Protected account access</p>
-                </div>
-                <Image src="/brand/1handindia_logo.webp" alt="1HandIndia" width={48} height={48} className="h-12 w-12 rounded-xl object-contain" />
+        <div className="flex items-center bg-white px-5 py-8 sm:px-10 sm:py-12 lg:px-12">
+          <div className="mx-auto w-full max-w-[430px]">
+            <div className="mb-7 flex items-center justify-between gap-4 border-b border-[#EEF0F2] pb-5">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">{presentation.eyebrow}</p>
+                <p className="mt-1 text-sm font-semibold text-[#667085]">
+                  {resolvedAudience === "seller" ? "Verified Merchant Portal" : "Protected account access"}
+                </p>
               </div>
-
-              {clerkEnabled ? (
-                mode === "sign-in" ? (
-                  <SignIn
-                    {...clerkProps}
-                    path={signInPath}
-                    routing="path"
-                    signUpUrl={switchHref}
-                    signUpForceRedirectUrl={redirectUrl}
-                    signUpFallbackRedirectUrl={redirectUrl}
-                  />
-                ) : (
-                  <SignUp
-                    {...clerkProps}
-                    path={signUpPath}
-                    routing="path"
-                    signInUrl={switchHref}
-                    signInForceRedirectUrl={redirectUrl}
-                    signInFallbackRedirectUrl={redirectUrl}
-                  />
-                )
-              ) : (
-                <AuthUnavailable />
-              )}
-
-              <AuthLegalLinks audience={resolvedAudience} />
+              <Image src="/brand/1handindia_logo.webp" alt="1HandIndia" width={48} height={48} className="h-12 w-12 rounded-xl object-contain shadow-xs ring-1 ring-[#F1E5E0]" />
             </div>
+
+            {clerkEnabled ? (
+              mode === "sign-in" ? (
+                <SignIn
+                  {...clerkProps}
+                  path={signInPath}
+                  routing="path"
+                  signUpUrl={switchHref}
+                  signUpForceRedirectUrl={redirectUrl}
+                  signUpFallbackRedirectUrl={redirectUrl}
+                />
+              ) : (
+                <SignUp
+                  {...clerkProps}
+                  path={signUpPath}
+                  routing="path"
+                  signInUrl={switchHref}
+                  signInForceRedirectUrl={redirectUrl}
+                  signInFallbackRedirectUrl={redirectUrl}
+                />
+              )
+            ) : (
+              <AuthUnavailable />
+            )}
+
+            {resolvedAudience === "seller" ? (
+              <div className="mt-6 rounded-2xl border border-[#F1E5E0] bg-[#FFF9F7] p-4 text-center text-xs">
+                {mode === "sign-in" ? (
+                  <p className="font-semibold text-[#475467]">
+                    New to 1HandIndia Seller Hub?{" "}
+                    <Link href="/seller/choose-plan?mode=retail" className="font-extrabold text-[#ED3500] hover:underline">
+                      Choose a Plan & Register &rarr;
+                    </Link>
+                  </p>
+                ) : (
+                  <p className="font-semibold text-[#475467]">
+                    Already have a seller account?{" "}
+                    <Link href="/seller/sign-in" className="font-extrabold text-[#ED3500] hover:underline">
+                      Sign In &rarr;
+                    </Link>
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            <AuthLegalLinks audience={resolvedAudience} />
           </div>
         </div>
-      </section>
-    </StorefrontFrame>
+      </div>
+    </section>
   );
+
+  if (resolvedAudience === "seller") {
+    return <SellerAuthFrame>{authCard}</SellerAuthFrame>;
+  }
+
+  return <StorefrontFrame>{authCard}</StorefrontFrame>;
 }
 
-function AuthStory({ presentation }: { presentation: AuthPresentation }) {
+function AuthStory({ presentation, audience }: { presentation: AuthPresentation; audience: AuthAudience }) {
+  const homeHref = audience === "seller" ? "/seller" : audience === "b2b" ? "/b2b" : "/";
+
   return (
     <div className="relative isolate overflow-hidden bg-[#ED3500] px-6 py-9 text-white sm:px-10 sm:py-12 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14">
       <div className="absolute -right-20 bottom-[-12rem] z-[-1] hidden w-[520px] opacity-20 lg:block">
@@ -191,8 +220,16 @@ function AuthStory({ presentation }: { presentation: AuthPresentation }) {
       <div className="absolute -left-16 -top-16 z-[-1] h-44 w-44 rounded-full border-[32px] border-white/10" aria-hidden="true" />
 
       <div>
-        <Link href="/" className="inline-flex items-center gap-3 rounded-full bg-white/12 px-4 py-2 text-sm font-black tracking-tight backdrop-blur-sm transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/30">
-          <span className="grid h-7 w-7 place-items-center rounded-full bg-white text-xs font-black text-[#ED3500]">1</span>
+        <Link href={homeHref} className="inline-flex items-center gap-3 rounded-full bg-white/12 px-4 py-2 text-sm font-black tracking-tight backdrop-blur-sm transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/30">
+          <span className="relative grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-white shadow-xs">
+            <Image
+              src="/brand/1handindia_logo.webp"
+              alt="1HandIndia Logo"
+              width={28}
+              height={28}
+              className="h-full w-full object-cover"
+            />
+          </span>
           {presentation.identity}
         </Link>
         <p className="mt-8 text-xs font-black uppercase tracking-[0.22em] text-white/75">{presentation.eyebrow}</p>

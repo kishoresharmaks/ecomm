@@ -23,7 +23,7 @@ export default async function ChoosePlanPage({
   return (
     <>
       <JsonLd data={buildWebPageJsonLd({ title: "Choose Seller Plan | 1HandIndia", description: "Choose a subscription plan.", path: "/seller/choose-plan" })} />
-      <SellerWorkspaceShell title="Choose your plan" description="Select the subscription tier that best fits your business needs.">
+      <SellerWorkspaceShell>
         <ChoosePlanClient initialMode={params.mode ?? null} />
       </SellerWorkspaceShell>
     </>
