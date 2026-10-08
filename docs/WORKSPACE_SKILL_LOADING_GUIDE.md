@@ -64,16 +64,17 @@ Use it for:
 
 ### Frontend and UI Work
 
-Use `frontend-skill`.
+Use `frontend-design` (available at `docs/skills/frontend-design/SKILL.md` and `.agents/skills/frontend-design/SKILL.md`) and `frontend-skill`.
 
 Use it for:
 
+- Distinctive, intentional UI design avoiding generic AI templates.
 - Customer storefront.
-- Seller center.
-- Admin panel.
+- Seller hub and dashboard UX.
+- Admin control panel.
 - Mobile-responsive layouts.
-- Polished marketplace UI.
-- Dashboard UX.
+- Strict brand palette adherence (`#ED3500` primary, `#FFFCFB` secondary).
+- Financial clarity and data density.
 
 ### API Design
 
