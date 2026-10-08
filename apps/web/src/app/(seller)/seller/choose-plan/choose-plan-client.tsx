@@ -117,10 +117,10 @@ export function ChoosePlanClient({ initialMode }: { initialMode?: string | null 
             <div className="p-6 bg-[#F8FAFC]">
               <Link 
                 href={`/seller/register?mode=${mode}&plan=${plan.id}`}
-                className={`flex w-full h-12 items-center justify-center gap-2 rounded-lg font-black transition-colors ${
+                className={`flex w-full h-12 items-center justify-center gap-2 rounded-xl font-black transition-colors ${
                   isFeatured 
-                    ? 'bg-[#ED3500] text-white hover:bg-[#D12E00]' 
-                    : 'bg-[#123A5A] text-white hover:bg-[#0A2235]'
+                    ? 'bg-[#ED3500] text-white hover:bg-[#D42F00] shadow-sm' 
+                    : 'border-2 border-[#ED3500] bg-white text-[#ED3500] hover:bg-[#FFF4F0]'
                 }`}
               >
                 Select {plan.name}

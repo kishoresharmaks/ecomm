@@ -293,7 +293,13 @@ export function SellerStartWelcome({
                     >
                       {track.icon}
                     </span>
-                    <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-1 text-[11px] font-black text-[#64748B]">
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[11px] font-black ${
+                        track.title === "Retail + Services"
+                          ? "border-[#FFD5CC] bg-[#FFF4F0] text-[#ED3500]"
+                          : "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]"
+                      }`}
+                    >
                       {track.badge}
                     </span>
                   </div>
@@ -322,11 +328,12 @@ export function SellerStartWelcome({
                 <div className="mt-8 border-t border-[#F1F5F9] pt-6">
                   <Button
                     asChild
-                    className="w-full bg-[#0F172A] font-bold text-white transition group-hover:bg-[#ED3500]"
+                    size="lg"
+                    className="w-full h-12 rounded-xl bg-[#ED3500] font-black text-white shadow-sm transition-all duration-200 hover:bg-[#D42F00] hover:shadow-md active:scale-[0.99] [&_svg]:text-white"
                   >
-                    <Link href={track.href as Route}>
-                      {track.action}
-                      <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
+                    <Link href={track.href as Route} className="flex items-center justify-center gap-2">
+                      <span className="text-white font-black">{track.action}</span>
+                      <ArrowRight className="h-4 w-4 text-white transition-transform duration-200 group-hover:translate-x-1" aria-hidden="true" />
                     </Link>
                   </Button>
                 </div>
