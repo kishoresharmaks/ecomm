@@ -757,6 +757,366 @@ describe("OrdersService", () => {
       "Inventory shortage",
     );
   });
+
+  it("isolates refund requests and cash receivables strictly to the authenticated seller in multi-vendor orders", async () => {
+    const multiVendorOrder = {
+      id: "ord_mv_1",
+      orderNumber: "1HI-9999",
+      idempotencyKey: null,
+      orderKind: "STANDARD",
+      parentOrder: null,
+      replacementReturnRequest: null,
+      orderStatus: "CONFIRMED",
+      paymentStatus: "PAID",
+      deliveryStatus: "DELIVERED",
+      subtotalPaise: 8000,
+      shippingPaise: 0,
+      platformFeePaise: 0,
+      couponCode: null,
+      couponTitle: null,
+      couponDiscountPaise: 0,
+      couponMerchandiseDiscountPaise: 0,
+      couponShippingDiscountPaise: 0,
+      couponPlatformFundedDiscountPaise: 0,
+      couponSellerFundedDiscountPaise: 0,
+      totalPaise: 8000,
+      currency: "INR",
+      buyerCountryCode: "IN",
+      buyerCurrency: "INR",
+      buyerSubtotalMinor: 8000,
+      buyerShippingMinor: 0,
+      buyerPlatformFeeMinor: 0,
+      buyerTotalMinor: 8000,
+      fxRate: null,
+      fxProvider: null,
+      fxRateFetchedAt: null,
+      shippingAddressSnapshot: {},
+      createdAt: new Date("2026-10-01T10:00:00.000Z"),
+      updatedAt: new Date("2026-10-01T10:00:00.000Z"),
+      items: [
+        {
+          id: "item_s1",
+          sellerId: "seller_1",
+          replacementSourceOrderItemId: null,
+          replacementSourceReturnItemId: null,
+          productNameSnapshot: "Seller 1 Product",
+          variantSnapshot: null,
+          quantity: 2,
+          activeQuantity: 2,
+          cancelledQuantity: 0,
+          returnedQuantity: 0,
+          refundedQuantity: 0,
+          replacementQuantity: 0,
+          lifecycleStatus: "ACTIVE",
+          unitPricePaise: 2500,
+          lineTotalPaise: 5000,
+          currency: "INR",
+          originalUnitPricePaise: 2500,
+          dealDiscountBps: null,
+          dealDiscountPaise: 0,
+          dealId: null,
+          dealSnapshot: null,
+          couponDiscountPaise: 0,
+          couponPlatformFundedDiscountPaise: 0,
+          couponSellerFundedDiscountPaise: 0,
+          returnPolicySnapshot: null,
+          returnItems: [],
+          product: null,
+        },
+        {
+          id: "item_s2",
+          sellerId: "seller_2",
+          replacementSourceOrderItemId: null,
+          replacementSourceReturnItemId: null,
+          productNameSnapshot: "Seller 2 Product",
+          variantSnapshot: null,
+          quantity: 1,
+          activeQuantity: 1,
+          cancelledQuantity: 0,
+          returnedQuantity: 0,
+          refundedQuantity: 0,
+          replacementQuantity: 0,
+          lifecycleStatus: "ACTIVE",
+          unitPricePaise: 3000,
+          lineTotalPaise: 3000,
+          currency: "INR",
+          originalUnitPricePaise: 3000,
+          dealDiscountBps: null,
+          dealDiscountPaise: 0,
+          dealId: null,
+          dealSnapshot: null,
+          couponDiscountPaise: 0,
+          couponPlatformFundedDiscountPaise: 0,
+          couponSellerFundedDiscountPaise: 0,
+          returnPolicySnapshot: null,
+          returnItems: [],
+          product: null,
+        },
+      ],
+      payments: [
+        {
+          id: "pay_1",
+          provider: "RAZORPAY",
+          method: "RAZORPAY",
+          amountPaise: 8000,
+          currency: "INR",
+          status: "PAID",
+          createdAt: new Date("2026-10-01T10:00:00.000Z"),
+        },
+      ],
+      sellerSplits: [
+        {
+          id: "split_s1",
+          orderId: "ord_mv_1",
+          sellerId: "seller_1",
+          sellerSubtotalPaise: 5000,
+          couponDiscountPaise: 0,
+          couponPlatformFundedDiscountPaise: 0,
+          couponSellerFundedDiscountPaise: 0,
+          couponAdjustmentPaise: 0,
+          commissionPaise: 500,
+          gstOnCommissionPaise: 90,
+          tdsPaise: 50,
+          tcsPaise: 50,
+          platformFeePaise: 0,
+          refundAdjustmentPaise: 0,
+          netPayablePaise: 4310,
+          sellerStatus: "CONFIRMED",
+          createdAt: new Date("2026-10-01T10:00:00.000Z"),
+          updatedAt: new Date("2026-10-01T10:00:00.000Z"),
+          seller: { id: "seller_1", storeName: "Store 1", slug: "store-1" },
+          sellerCashReceivables: [],
+          shipment: null,
+        },
+        {
+          id: "split_s2",
+          orderId: "ord_mv_1",
+          sellerId: "seller_2",
+          sellerSubtotalPaise: 3000,
+          couponDiscountPaise: 0,
+          couponPlatformFundedDiscountPaise: 0,
+          couponSellerFundedDiscountPaise: 0,
+          couponAdjustmentPaise: 0,
+          commissionPaise: 300,
+          gstOnCommissionPaise: 54,
+          tdsPaise: 30,
+          tcsPaise: 30,
+          platformFeePaise: 0,
+          refundAdjustmentPaise: 0,
+          netPayablePaise: 2586,
+          sellerStatus: "CONFIRMED",
+          createdAt: new Date("2026-10-01T10:00:00.000Z"),
+          updatedAt: new Date("2026-10-01T10:00:00.000Z"),
+          seller: { id: "seller_2", storeName: "Store 2", slug: "store-2" },
+          sellerCashReceivables: [],
+          shipment: null,
+        },
+      ],
+      shipments: [],
+      sellerCashReceivables: [
+        {
+          id: "rec_s1",
+          receivableNumber: "REC-S1-001",
+          orderId: "ord_mv_1",
+          orderSellerSplitId: "split_s1",
+          sellerId: "seller_1",
+          source: "DELIVERY_COD",
+          status: "OPEN",
+          grossCashCollectedPaise: 5000,
+          platformDuePaise: 500,
+          offsetPaise: 0,
+          settledPaise: 0,
+          waivedPaise: 0,
+          outstandingPaise: 5000,
+          currency: "INR",
+          openedAt: new Date("2026-10-01T10:00:00.000Z"),
+          settledAt: null,
+          waivedAt: null,
+        },
+        {
+          id: "rec_s2",
+          receivableNumber: "REC-S2-002",
+          orderId: "ord_mv_1",
+          orderSellerSplitId: "split_s2",
+          sellerId: "seller_2",
+          source: "DELIVERY_COD",
+          status: "OPEN",
+          grossCashCollectedPaise: 3000,
+          platformDuePaise: 300,
+          offsetPaise: 0,
+          settledPaise: 0,
+          waivedPaise: 0,
+          outstandingPaise: 3000,
+          currency: "INR",
+          openedAt: new Date("2026-10-01T10:00:00.000Z"),
+          settledAt: null,
+          waivedAt: null,
+        },
+      ],
+      refundRequests: [
+        {
+          id: "ref_s1",
+          refundNumber: "REF-S1-001",
+          status: "PENDING_REVIEW",
+          reason: "Defective item from seller 1",
+          method: "RAZORPAY",
+          amountPaise: 2500,
+          approvedAmountPaise: 2500,
+          currency: "INR",
+          note: "Customer return note for seller 1",
+          createdAt: new Date("2026-10-02T10:00:00.000Z"),
+          approvedAt: null,
+          reviewedAt: null,
+          items: [
+            {
+              id: "ref_item_1",
+              orderItemId: "item_s1",
+              orderSellerSplitId: "split_s1",
+              sellerId: "seller_1",
+              quantity: 1,
+              amountPaise: 2500,
+              approvedAmountPaise: 2500,
+            },
+          ],
+        },
+        {
+          id: "ref_s2",
+          refundNumber: "REF-S2-002",
+          status: "APPROVED",
+          reason: "Competitor secret return reason for seller 2",
+          method: "RAZORPAY",
+          amountPaise: 3000,
+          approvedAmountPaise: 3000,
+          currency: "INR",
+          note: "Private merchant note for seller 2",
+          createdAt: new Date("2026-10-02T11:00:00.000Z"),
+          approvedAt: new Date("2026-10-02T12:00:00.000Z"),
+          reviewedAt: new Date("2026-10-02T12:00:00.000Z"),
+          items: [
+            {
+              id: "ref_item_2",
+              orderItemId: "item_s2",
+              orderSellerSplitId: "split_s2",
+              sellerId: "seller_2",
+              quantity: 1,
+              amountPaise: 3000,
+              approvedAmountPaise: 3000,
+            },
+          ],
+        },
+        {
+          id: "ref_mixed",
+          refundNumber: "REF-MIX-003",
+          status: "PROCESSING",
+          reason: "Combined package issue",
+          method: "RAZORPAY",
+          amountPaise: 5500,
+          approvedAmountPaise: 5500,
+          currency: "INR",
+          note: "Customer return of both items",
+          createdAt: new Date("2026-10-03T09:00:00.000Z"),
+          approvedAt: null,
+          reviewedAt: null,
+          items: [
+            {
+              id: "ref_item_mixed_1",
+              orderItemId: "item_s1",
+              orderSellerSplitId: "split_s1",
+              sellerId: "seller_1",
+              quantity: 1,
+              amountPaise: 2500,
+              approvedAmountPaise: 2500,
+            },
+            {
+              id: "ref_item_mixed_2",
+              orderItemId: "item_s2",
+              orderSellerSplitId: "split_s2",
+              sellerId: "seller_2",
+              quantity: 1,
+              amountPaise: 3000,
+              approvedAmountPaise: 3000,
+            },
+          ],
+        },
+      ],
+      deliveryDetail: {
+        id: "del_1",
+        status: "DELIVERED",
+        deliveryMode: "THIRD_PARTY_COURIER",
+        events: [],
+      },
+      statusEvents: [],
+      deliveryEvents: [],
+    };
+
+    const prisma = {
+      client: {
+        seller: {
+          findUnique: vi.fn().mockResolvedValue({ id: "seller_1", userId: "user_1" }),
+        },
+        order: {
+          findFirst: vi.fn().mockResolvedValue(multiVendorOrder),
+        },
+      },
+    };
+
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+
+    const result = await service.getSellerOrder({ id: "user_1" } as never, "1HI-9999");
+
+    // 1. Items strictly scoped to seller_1
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.sellerId).toBe("seller_1");
+    expect(result.items[0]?.id).toBe("item_s1");
+
+    // 2. Seller splits strictly scoped to seller_1
+    expect(result.sellerSplits).toHaveLength(1);
+    expect(result.sellerSplits[0]?.sellerId).toBe("seller_1");
+
+    // 3. Top-level cash receivables strictly scoped to seller_1 (rec_s2 completely stripped)
+    expect(result.sellerCashReceivables).toHaveLength(1);
+    expect(result.sellerCashReceivables[0]?.id).toBe("rec_s1");
+    expect(result.sellerCashReceivables.some((r: { id: string }) => r.id === "rec_s2")).toBe(false);
+
+    // 4. Refund requests strictly scoped to seller_1:
+    // ref_s2 (belonging only to seller_2) MUST be completely stripped
+    expect(result.refundRequests).toHaveLength(2);
+    expect(result.refundRequests.some((r: { id: string }) => r.id === "ref_s2")).toBe(false);
+
+    // ref_s1 has seller_1 items only
+    const resRef1 = result.refundRequests.find((r: { id: string }) => r.id === "ref_s1");
+    expect(resRef1).toBeDefined();
+    expect(resRef1?.amountPaise).toBe(2500);
+    expect(resRef1?.items).toHaveLength(1);
+    expect(resRef1?.items[0]?.sellerId).toBe("seller_1");
+
+    // ref_mixed has seller_2 items stripped and amounts recalculated to seller_1's portion only
+    const resMixed = result.refundRequests.find((r: { id: string }) => r.id === "ref_mixed");
+    expect(resMixed).toBeDefined();
+    expect(resMixed?.amountPaise).toBe(2500); // 2500 instead of 5500
+    expect(resMixed?.approvedAmountPaise).toBe(2500); // 2500 instead of 5500
+    expect(resMixed?.items).toHaveLength(1);
+    expect(resMixed?.items[0]?.sellerId).toBe("seller_1");
+    expect(resMixed?.items.some((item: { sellerId: string }) => item.sellerId === "seller_2")).toBe(false);
+  });
 });
 
 function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: string } = {}) {

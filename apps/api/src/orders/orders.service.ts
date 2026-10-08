@@ -4963,7 +4963,57 @@ export class OrdersService {
       }
     }
 
-    const latestRefund = (order.refundRequests ?? [])[0] ?? null;
+    const isSingleSellerOrder =
+      order.sellerSplits.length === 1 && order.sellerSplits[0]?.sellerId === sellerId;
+
+    const sellerRefundRequests = (order.refundRequests ?? [])
+      .filter((r) => {
+        const hasSellerItems = (r.items ?? []).some((item) => item.sellerId === sellerId);
+        if (hasSellerItems) return true;
+        return isSingleSellerOrder && (r.items ?? []).length === 0;
+      })
+      .map((r) => {
+        const sellerItems = (r.items ?? []).filter((item) => item.sellerId === sellerId);
+        const sellerRefundAmount =
+          sellerItems.length > 0
+            ? sellerItems.reduce((sum, item) => sum + item.amountPaise, 0)
+            : r.amountPaise;
+        const sellerApprovedAmount =
+          r.approvedAmountPaise != null
+            ? (sellerRefundAmount === r.amountPaise
+                ? r.approvedAmountPaise
+                : Math.min(sellerRefundAmount, r.approvedAmountPaise))
+            : null;
+
+        return {
+          id: r.id,
+          refundNumber: r.refundNumber,
+          status: r.status,
+          reason: r.reason,
+          method: r.method,
+          amountPaise: sellerRefundAmount,
+          approvedAmountPaise: sellerApprovedAmount,
+          currency: r.currency,
+          note: r.note,
+          createdAt: r.createdAt,
+          approvedAt: r.approvedAt,
+          reviewedAt: r.reviewedAt,
+          items: sellerItems.map((item) => ({
+            id: item.id,
+            orderItemId: item.orderItemId,
+            orderSellerSplitId: item.orderSellerSplitId,
+            sellerId: item.sellerId,
+            quantity: item.quantity,
+            amountPaise: item.amountPaise,
+          })),
+        };
+      });
+
+    const sellerReceivables = (order.sellerCashReceivables ?? [])
+      .filter((receivable) => receivable.sellerId === sellerId)
+      .map((receivable) => this.sellerCashReceivableSummary(receivable));
+
+    const latestRefund = sellerRefundRequests[0] ?? null;
     const sellerRefundStatus = latestRefund
       ? latestRefund.status
       : (sellerRefundPaise > 0 ? RefundRequestStatus.APPROVED : null);
@@ -5047,6 +5097,8 @@ export class OrdersService {
       shipments: order.shipments
         .filter((shipment) => shipment.sellerId === sellerId)
         .map((shipment) => this.shipmentReadback(shipment, { sellerLabelAccess: true })),
+      refundRequests: sellerRefundRequests,
+      sellerCashReceivables: sellerReceivables,
     };
   }
 
