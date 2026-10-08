@@ -803,10 +803,19 @@ export class CmsService {
   }
 
   async listAdminAnnouncements(query: CmsQueryDto) {
+    await this.ensureDefaultSellerAnnouncement();
     const { skip, take, page } = this.pagination(query);
     const where: Prisma.CmsAnnouncementWhereInput = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.search ? { title: { contains: query.search, mode: "insensitive" } } : {})
+      ...(query.targetAudience ? { targetAudience: query.targetAudience } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: "insensitive" } },
+              { description: { contains: query.search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
     };
     const [items, total] = await this.prisma.client.$transaction(async (tx) => {
       const items = await tx.cmsAnnouncement.findMany({ where, orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }], skip, take });
@@ -817,11 +826,23 @@ export class CmsService {
     return { items, total, page, limit: take };
   }
 
-  listPublishedAnnouncements() {
+  getAdminAnnouncement(id: string) {
+    return this.getAnnouncementOrThrow(id);
+  }
+
+  async listPublishedAnnouncements(targetAudience?: string) {
+    if (targetAudience === "SELLER_DASHBOARD") {
+      await this.ensureDefaultSellerAnnouncement();
+    }
     const now = new Date();
-    return this.publicCmsRead("published announcements", () => this.prisma.client.cmsAnnouncement.findMany({
+    const audienceFilter: Prisma.CmsAnnouncementWhereInput = targetAudience
+      ? { targetAudience: { in: [targetAudience, "ALL"] } }
+      : { targetAudience: { in: ["STOREFRONT", "ALL"] } };
+
+    return this.publicCmsRead(`published announcements (${targetAudience ?? "STOREFRONT"})`, () => this.prisma.client.cmsAnnouncement.findMany({
       where: {
         status: ContentStatus.PUBLISHED,
+        ...audienceFilter,
         AND: [
           { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
           { OR: [{ endsAt: null }, { endsAt: { gte: now } }] }
@@ -831,11 +852,45 @@ export class CmsService {
     }), []);
   }
 
+  private async ensureDefaultSellerAnnouncement() {
+    try {
+      const count = await this.prisma.client.cmsAnnouncement.count({
+        where: { targetAudience: "SELLER_DASHBOARD" },
+      });
+      if (count === 0) {
+        await this.prisma.client.cmsAnnouncement.create({
+          data: {
+            title: "Financial Transparency: How your Net Sales are calculated",
+            description: "Net Sales reflects your gross product sales after mandatory statutory compliance (1% TDS u/s 194-O + 1% TCS under GST) and marketplace commission. Buyer Checkout Platform Fee (e.g. ₹15) is charged directly to the buyer for marketplace services and is never deducted from your payout.",
+            primaryCtaLabel: "View Tax & Fee Breakdown",
+            linkUrl: "#tax-breakdown",
+            secondaryCtaLabel: "Open Finance Wallet & Ledger",
+            secondaryLinkUrl: "/seller/finance/wallet",
+            targetAudience: "SELLER_DASHBOARD",
+            tone: "INFO",
+            isDismissible: true,
+            status: ContentStatus.PUBLISHED,
+            sortOrder: 1,
+          },
+        });
+      }
+    } catch {
+      // Gracefully ignore if concurrency or table not yet migrated
+    }
+  }
+
   async createAnnouncement(actor: RequestUser, dto: CreateCmsAnnouncementDto) {
     const announcement = await this.prisma.client.cmsAnnouncement.create({
       data: {
         title: dto.title,
+        description: dto.description ?? null,
         linkUrl: dto.linkUrl ?? null,
+        primaryCtaLabel: dto.primaryCtaLabel ?? null,
+        secondaryLinkUrl: dto.secondaryLinkUrl ?? null,
+        secondaryCtaLabel: dto.secondaryCtaLabel ?? null,
+        targetAudience: dto.targetAudience ?? "STOREFRONT",
+        tone: dto.tone ?? "INFO",
+        isDismissible: dto.isDismissible ?? true,
         backgroundColor: dto.backgroundColor ?? null,
         textColor: dto.textColor ?? null,
         startsAt: this.parseOptionalDate(dto.startsAt, "Announcement start date"),
@@ -856,7 +911,14 @@ export class CmsService {
       where: { id },
       data: {
         ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.description !== undefined ? { description: dto.description ?? null } : {}),
         ...(dto.linkUrl !== undefined ? { linkUrl: dto.linkUrl ?? null } : {}),
+        ...(dto.primaryCtaLabel !== undefined ? { primaryCtaLabel: dto.primaryCtaLabel ?? null } : {}),
+        ...(dto.secondaryLinkUrl !== undefined ? { secondaryLinkUrl: dto.secondaryLinkUrl ?? null } : {}),
+        ...(dto.secondaryCtaLabel !== undefined ? { secondaryCtaLabel: dto.secondaryCtaLabel ?? null } : {}),
+        ...(dto.targetAudience !== undefined ? { targetAudience: dto.targetAudience } : {}),
+        ...(dto.tone !== undefined ? { tone: dto.tone } : {}),
+        ...(dto.isDismissible !== undefined ? { isDismissible: dto.isDismissible } : {}),
         ...(dto.backgroundColor !== undefined ? { backgroundColor: dto.backgroundColor ?? null } : {}),
         ...(dto.textColor !== undefined ? { textColor: dto.textColor ?? null } : {}),
         ...(dto.startsAt !== undefined ? { startsAt: this.parseOptionalDate(dto.startsAt, "Announcement start date") } : {}),

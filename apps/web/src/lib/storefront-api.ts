@@ -709,13 +709,22 @@ export type HomepageBanner = {
 export type CmsAnnouncement = {
   id: string;
   title: string;
+  description?: string | null;
   linkUrl: string | null;
+  primaryCtaLabel?: string | null;
+  secondaryLinkUrl?: string | null;
+  secondaryCtaLabel?: string | null;
+  targetAudience?: string;
+  tone?: string;
+  isDismissible?: boolean;
   backgroundColor: string | null;
   textColor: string | null;
   startsAt: string | null;
   endsAt: string | null;
   status: string;
   sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type CmsPopupAnnouncement = {
@@ -1520,8 +1529,10 @@ export function listHomepageBanners() {
   return indihubFetch<HomepageBanner[]>("/api/cms/banners");
 }
 
-export function listCmsAnnouncements() {
-  return indihubFetch<CmsAnnouncement[]>("/api/cms/announcements");
+export function listCmsAnnouncements(targetAudience?: string | unknown) {
+  const audience = typeof targetAudience === "string" ? targetAudience : undefined;
+  const query = audience ? `?targetAudience=${encodeURIComponent(audience)}` : "";
+  return indihubFetch<CmsAnnouncement[]>(`/api/cms/announcements${query}`);
 }
 
 export function listCmsPopupAnnouncements() {

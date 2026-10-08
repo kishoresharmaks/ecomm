@@ -17,9 +17,9 @@ export class PublicCmsController {
   }
 
   @Get("announcements")
-  @ApiOperation({ summary: "List published storefront announcements." })
-  listAnnouncements() {
-    return this.cmsService.listPublishedAnnouncements();
+  @ApiOperation({ summary: "List published announcements." })
+  listAnnouncements(@Query("targetAudience") targetAudience?: string) {
+    return this.cmsService.listPublishedAnnouncements(targetAudience);
   }
 
   @Get("popup-announcements")

@@ -6829,21 +6829,29 @@ model B2BMutationRecord {
 }
 
 model CmsAnnouncement {
-  id              String        @id @default(uuid()) @db.Uuid
-  title           String
-  linkUrl         String?       @map("link_url")
-  backgroundColor String?       @map("background_color")
-  textColor       String?       @map("text_color")
-  startsAt        DateTime?     @map("starts_at")
-  endsAt          DateTime?     @map("ends_at")
-  status          ContentStatus @default(DRAFT)
-  sortOrder       Int           @default(0) @map("sort_order")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
+  id                String        @id @default(uuid()) @db.Uuid
+  title             String
+  description       String?       @db.Text
+  linkUrl           String?       @map("link_url")
+  primaryCtaLabel   String?       @map("primary_cta_label")
+  secondaryLinkUrl  String?       @map("secondary_link_url")
+  secondaryCtaLabel String?       @map("secondary_cta_label")
+  targetAudience    String        @default("STOREFRONT") @map("target_audience")
+  tone              String        @default("INFO")
+  isDismissible     Boolean       @default(true) @map("is_dismissible")
+  backgroundColor   String?       @map("background_color")
+  textColor         String?       @map("text_color")
+  startsAt          DateTime?     @map("starts_at")
+  endsAt            DateTime?     @map("ends_at")
+  status            ContentStatus @default(DRAFT)
+  sortOrder         Int           @default(0) @map("sort_order")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
 
   @@index([startsAt])
   @@index([endsAt])
   @@index([status, sortOrder])
+  @@index([targetAudience, status])
   @@map("cms_announcements")
 }
 

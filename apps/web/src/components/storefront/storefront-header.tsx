@@ -133,7 +133,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
   });
   const announcementsQuery = useQuery({
     queryKey: ["cms-announcements", "header"],
-    queryFn: listCmsAnnouncements,
+    queryFn: () => listCmsAnnouncements("STOREFRONT"),
     staleTime: staticStorefrontDataStaleMs,
     retry: false,
   });

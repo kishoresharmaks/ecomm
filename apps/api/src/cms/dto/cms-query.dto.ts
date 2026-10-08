@@ -29,5 +29,11 @@ export class CmsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @ApiPropertyOptional({ example: "SELLER_DASHBOARD" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  targetAudience?: string;
 }
 

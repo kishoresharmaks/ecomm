@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
@@ -32,7 +32,12 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, cn } from "@indihub/ui";
-import { formatMoney } from "@/lib/storefront-api";
+import { formatMoney, listCmsAnnouncements, type CmsAnnouncement } from "@/lib/storefront-api";
+import {
+  buildSellerAnnouncementDismissalUpdate,
+  isSellerAnnouncementDismissed,
+  resolveSellerAnnouncementTheme,
+} from "@/lib/seller-announcement";
 import {
   getSellerFinanceReport,
   getSellerProfile,
@@ -57,8 +62,43 @@ type OrderFilterTab = "ALL" | "PENDING" | "DISPATCHED" | "DELIVERED";
 export function SellerDashboardClient() {
   const sellerAuth = useSellerAuth();
   const [showDeductionsModal, setShowDeductionsModal] = useState(false);
-  const [dismissFinanceTip, setDismissFinanceTip] = useState(false);
   const [orderFilter, setOrderFilter] = useState<OrderFilterTab>("ALL");
+  const [dismissedAnnouncementIds, setDismissedAnnouncementIds] = useState<Record<string, string>>({});
+  const [hasLoadedDismissals, setHasLoadedDismissals] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("indihub_seller_dismissed_announcements");
+      if (stored) {
+        setDismissedAnnouncementIds(JSON.parse(stored));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setHasLoadedDismissals(true);
+    }
+  }, []);
+
+  const announcementsQuery = useQuery({
+    queryKey: ["seller-cms-announcements"],
+    queryFn: () => listCmsAnnouncements("SELLER_DASHBOARD"),
+    staleTime: 60_000,
+  });
+
+  const handleDismissAnnouncement = (announcement: CmsAnnouncement) => {
+    const updated = buildSellerAnnouncementDismissalUpdate(announcement, dismissedAnnouncementIds);
+    setDismissedAnnouncementIds(updated);
+    try {
+      localStorage.setItem("indihub_seller_dismissed_announcements", JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  const activeAnnouncements = (announcementsQuery.data ?? []).filter((item) => {
+    if (!hasLoadedDismissals) return false;
+    return !isSellerAnnouncementDismissed(item, dismissedAnnouncementIds);
+  });
 
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -237,51 +277,102 @@ export function SellerDashboardClient() {
         </div>
       ) : null}
 
-      {/* ── 3. Transparent Payout & Statutory Deductions Explainer Banner ─────── */}
-      {!dismissFinanceTip ? (
-        <div className="relative overflow-hidden rounded-xl border border-[#E0EAFF] bg-gradient-to-r from-[#EFF4FF] via-[#F5F8FF] to-[#EFF8FF] p-4 text-[#1E40AF] sm:p-5">
-          <div className="flex items-start gap-3.5">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#DBEAFE] text-[#1D4ED8]">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div className="flex-1 text-xs sm:text-sm">
-              <p className="font-bold text-[#1E3A8A]">
-                Financial Transparency: How your Net Sales are calculated
-              </p>
-              <p className="mt-1 leading-relaxed text-[#1E40AF]">
-                <strong>Net Sales</strong> reflects your gross product sales after mandatory statutory compliance (<strong>1% TDS</strong> u/s 194-O + <strong>1% TCS</strong> under GST) and marketplace commission. 
-                <span className="block mt-1 font-semibold text-[#1E3A8A]">
-                  • Buyer Checkout Platform Fee (e.g. ₹15) is charged directly to the buyer for marketplace services and is <u>never</u> deducted from your payout.
-                </span>
-              </p>
-              <div className="mt-2.5 flex flex-wrap items-center gap-3">
+      {/* ── 3. Operational & Financial Announcements from CMS (Dynamic) ─────── */}
+      {activeAnnouncements.map((announcement) => {
+        const { containerClasses, iconClasses, titleColor, bodyColor, linkColor, customStyle } =
+          resolveSellerAnnouncementTheme(
+            announcement.tone,
+            announcement.backgroundColor,
+            announcement.textColor
+          );
+
+        const isTaxBreakdownCta =
+          announcement.linkUrl === "#tax-breakdown" ||
+          announcement.primaryCtaLabel?.toLowerCase().includes("breakdown") ||
+          announcement.primaryCtaLabel?.toLowerCase().includes("tax & fee");
+
+        return (
+          <div
+            key={announcement.id}
+            style={customStyle}
+            className={cn(
+              "relative overflow-hidden rounded-xl border p-4 text-xs transition sm:p-5 sm:text-sm",
+              containerClasses
+            )}
+          >
+            <div className="flex items-start gap-3.5">
+              <div
+                className={cn(
+                  "grid h-9 w-9 shrink-0 place-items-center rounded-lg",
+                  iconClasses
+                )}
+              >
+                {getSellerAnnouncementIcon(announcement.tone)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className={cn("font-bold", titleColor)}>
+                  {announcement.title}
+                </p>
+                {announcement.description ? (
+                  <p className={cn("mt-1 leading-relaxed", bodyColor)}>
+                    {announcement.description}
+                  </p>
+                ) : null}
+                <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                  {announcement.primaryCtaLabel ? (
+                    isTaxBreakdownCta ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowDeductionsModal(true)}
+                        className={cn(
+                          "font-bold underline underline-offset-4 hover:opacity-80 transition cursor-pointer",
+                          linkColor
+                        )}
+                      >
+                        {announcement.primaryCtaLabel}
+                      </button>
+                    ) : announcement.linkUrl ? (
+                      <Link
+                        href={announcement.linkUrl as Route}
+                        className={cn("font-bold hover:underline transition", linkColor)}
+                      >
+                        {announcement.primaryCtaLabel}
+                      </Link>
+                    ) : (
+                      <span className={cn("font-bold", linkColor)}>
+                        {announcement.primaryCtaLabel}
+                      </span>
+                    )
+                  ) : null}
+
+                  {announcement.primaryCtaLabel && announcement.secondaryCtaLabel ? (
+                    <span className="text-[#94A3B8]">•</span>
+                  ) : null}
+
+                  {announcement.secondaryCtaLabel && announcement.secondaryLinkUrl ? (
+                    <Link
+                      href={announcement.secondaryLinkUrl as Route}
+                      className={cn("font-bold hover:underline transition", linkColor)}
+                    >
+                      {announcement.secondaryCtaLabel}
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+              {announcement.isDismissible ? (
                 <button
                   type="button"
-                  onClick={() => setShowDeductionsModal(true)}
-                  className="font-bold text-[#1D4ED8] underline underline-offset-4 hover:text-[#1E3A8A]"
+                  onClick={() => handleDismissAnnouncement(announcement)}
+                  className="text-[#64748B] transition hover:text-[#1E293B]"
+                  aria-label="Dismiss notice"
                 >
-                  View Tax & Fee Breakdown
+                  <X className="h-4 w-4" aria-hidden="true" />
                 </button>
-                <span className="text-[#94A3B8]">•</span>
-                <Link
-                  href="/seller/finance/wallet"
-                  className="font-bold text-[#1D4ED8] hover:underline"
-                >
-                  Open Finance Wallet & Ledger
-                </Link>
-              </div>
+              ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => setDismissFinanceTip(true)}
-              className="text-[#64748B] transition hover:text-[#1E293B]"
-              aria-label="Dismiss payout notice"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
           </div>
-        </div>
-      ) : null}
+        );
+      })}
 
       {/* ── 4. Subscription Plan Card (if active) ───────────────────────────── */}
       {profile?.subscriptionPlan ? (
@@ -965,3 +1056,12 @@ function QuickToolCard({
     </Link>
   );
 }
+
+function getSellerAnnouncementIcon(tone?: string) {
+  if (tone === "WARNING") return <AlertTriangle className="h-5 w-5" aria-hidden="true" />;
+  if (tone === "SUCCESS") return <CheckCircle2 className="h-5 w-5" aria-hidden="true" />;
+  if (tone === "BRAND") return <Sparkles className="h-5 w-5" aria-hidden="true" />;
+  return <ShieldCheck className="h-5 w-5" aria-hidden="true" />;
+}
+
+

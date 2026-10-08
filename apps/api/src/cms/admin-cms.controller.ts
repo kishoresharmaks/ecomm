@@ -77,6 +77,12 @@ export class AdminCmsController {
     return this.cmsService.listAdminAnnouncements(query);
   }
 
+  @Get("announcements/:id")
+  @ApiOperation({ summary: "Read a CMS announcement for admin." })
+  getAnnouncement(@Param("id", ParseUUIDPipe) id: string) {
+    return this.cmsService.getAdminAnnouncement(id);
+  }
+
   @Post("announcements")
   @ApiOperation({ summary: "Create a CMS announcement." })
   createAnnouncement(@CurrentUser() actor: RequestUser, @Body() dto: CreateCmsAnnouncementDto) {
