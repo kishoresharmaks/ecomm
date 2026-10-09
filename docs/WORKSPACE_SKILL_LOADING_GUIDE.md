@@ -149,13 +149,16 @@ Use it when:
 - API and database path must be verified.
 - User asks "check all", "complete checklist", or "is it ready".
 
-## 3. Project Local Skill
+## 3. Project Local Skills
 
-This workspace includes a local project skill:
+This workspace includes dedicated project skills under `.agents/skills/`:
 
-`.agents/skills/beeshub-marketplace/SKILL.md`
-
-Use it as the 1HandIndia-specific operating guide. It captures the project goal, scope, build quality target, and read order.
+- `.agents/skills/beeshub-marketplace/SKILL.md`: Main operating guide for 1HandIndia multi-vendor marketplace scope, architecture, and governance.
+- `.agents/skills/backend-db-architecture/SKILL.md`: PostgreSQL, Prisma ORM, transactional concurrency, indexing, and immutable financial ledger engine.
+- `.agents/skills/backend-api-design/SKILL.md`: NestJS REST API architecture, DTO validation, multi-tier RBAC, webhook security, and rate limiting.
+- `.agents/skills/ecommerce-operations/SKILL.md`: Order split lifecycle, pricing security, Indian statutory taxes (1% TDS / 1% TCS), seller payouts, and courier logistics.
+- `.agents/skills/frontend-craftsmanship/SKILL.md`: Next.js App Router, React performance, TanStack Query caching, accessibility, and brand UI discipline.
+- `.agents/skills/frontend-design/SKILL.md`: Visual design direction, typography, UX layouts, and distinct portal identities.
 
 ## 4. Before Coding Checklist
 

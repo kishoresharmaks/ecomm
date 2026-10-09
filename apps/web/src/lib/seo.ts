@@ -76,7 +76,25 @@ function getSiteUrl() {
 
 export const siteUrl = getSiteUrl();
 
-export const publicRobotsAllow = ["/", "/seller/register", "/b2b/register"] as const;
+export const publicRobotsAllow = [
+  "/",
+  "/stores",
+  "/products",
+  "/categories",
+  "/deals",
+  "/about",
+  "/contact",
+  "/seller",
+  "/seller/register",
+  "/b2b",
+  "/b2b/register",
+  "/privacy-policy",
+  "/refund-return-policy",
+  "/seller-policy",
+  "/shipping-policy",
+  "/terms-and-conditions",
+  "/account-deletion"
+] as const;
 
 export const privateRobotsDisallow = [
   "/admin",
@@ -113,20 +131,22 @@ export const privateRobotsDisallow = [
 ] as const;
 
 export const staticPublicSitemapEntries = [
-  { path: "/", changeFrequency: "daily", priority: 1, source: "homepage" },
-  { path: "/categories", changeFrequency: "daily", priority: 0.8, source: "categories" },
-  { path: "/deals", changeFrequency: "daily", priority: 0.75, source: "deals" },
-  { path: "/stores", changeFrequency: "daily", priority: 0.8, source: "stores" },
-  { path: "/about", changeFrequency: "monthly", priority: 0.45, source: "about" },
-  { path: "/contact", changeFrequency: "monthly", priority: 0.55, source: "support_landing" },
-  { path: "/seller/register", changeFrequency: "weekly", priority: 0.65, source: "seller_landing" },
-  { path: "/b2b/register", changeFrequency: "weekly", priority: 0.65, source: "b2b_landing" },
-  { path: "/privacy-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
-  { path: "/account-deletion", changeFrequency: "monthly", priority: 0.35, source: "policy" },
-  { path: "/refund-return-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
-  { path: "/seller-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
-  { path: "/shipping-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
-  { path: "/terms-and-conditions", changeFrequency: "monthly", priority: 0.35, source: "policy" }
+  { path: "/", changeFrequency: "daily", priority: 1.0, source: "homepage" },
+  { path: "/stores", changeFrequency: "daily", priority: 0.9, source: "stores" },
+  { path: "/categories", changeFrequency: "daily", priority: 0.9, source: "categories" },
+  { path: "/deals", changeFrequency: "daily", priority: 0.85, source: "deals" },
+  { path: "/seller", changeFrequency: "weekly", priority: 0.75, source: "seller_landing" },
+  { path: "/seller/register", changeFrequency: "weekly", priority: 0.7, source: "seller_register" },
+  { path: "/b2b", changeFrequency: "weekly", priority: 0.75, source: "b2b_landing" },
+  { path: "/b2b/register", changeFrequency: "weekly", priority: 0.7, source: "b2b_register" },
+  { path: "/about", changeFrequency: "monthly", priority: 0.5, source: "about" },
+  { path: "/contact", changeFrequency: "monthly", priority: 0.6, source: "support_landing" },
+  { path: "/privacy-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/account-deletion", changeFrequency: "monthly", priority: 0.3, source: "policy" },
+  { path: "/refund-return-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/seller-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/shipping-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/terms-and-conditions", changeFrequency: "monthly", priority: 0.4, source: "policy" }
 ] satisfies SitemapEntry[];
 
 export function absoluteUrl(pathOrUrl?: string | null) {
@@ -388,21 +408,47 @@ function resolveManagedImage(value?: string | null) {
 
 export function buildStoreJsonLd(store: StoreProfile) {
   const address = store.addresses?.[0];
+  const logo = resolveManagedImage(store.profile?.logoUrl);
+  const banner = resolveManagedImage(store.profile?.bannerUrl);
+  const images = [banner, logo].filter((img): img is string => Boolean(img));
+  const reviewSummary = store.reviewSummary;
+
   return {
     "@context": "https://schema.org",
-    "@type": "LocalBusiness",
+    "@type": ["Store", "LocalBusiness", "OnlineStore"],
+    "@id": absoluteUrl(`/stores/${store.slug}#store`),
     name: store.storeName,
     url: absoluteUrl(`/stores/${store.slug}`),
-    image: store.profile?.logoUrl ? absoluteUrl(store.profile.logoUrl) : undefined,
-    description: store.profile?.description ?? undefined,
+    description: store.profile?.description?.trim() || `Shop products and services from ${store.storeName} on 1HandIndia.`,
+    image: images.length > 0 ? images : undefined,
+    logo: logo || absoluteUrl("/brand/1handindia_logo.webp"),
+    priceRange: "₹₹",
+    currenciesAccepted: "INR",
+    paymentAccepted: "Cash, Credit Card, Debit Card, UPI, Net Banking",
     address: address
       ? {
           "@type": "PostalAddress",
+          streetAddress: address.area || undefined,
           addressLocality: address.city,
           addressRegion: address.state,
           addressCountry: address.countryCode ?? "IN"
         }
-      : undefined
+      : undefined,
+    aggregateRating:
+      reviewSummary?.reviewCount && reviewSummary.averageRating
+        ? {
+            "@type": "AggregateRating",
+            ratingValue: reviewSummary.averageRating,
+            reviewCount: reviewSummary.reviewCount,
+            bestRating: 5,
+            worstRating: 1
+          }
+        : undefined,
+    parentOrganization: {
+      "@type": "Organization",
+      name: brandConfig.name,
+      url: siteUrl
+    }
   };
 }
 
@@ -488,17 +534,17 @@ async function safePublicFetch<T>(path: string) {
 async function fallbackSitemapEntries(): Promise<SitemapEntry[]> {
   const [categories, products, stores, pages] = await Promise.all([
     safeData(() => listCategories()),
-    safeData(() => listProducts({ limit: 100 })),
-    safeData(() => listStores()),
+    safeData(() => listProducts({ limit: 1000 })),
+    safeData(() => listStores({ limit: 1000 })),
     safePublicFetch<CmsPage[]>("/api/cms/pages")
   ]);
 
   return [
     ...staticPublicSitemapEntries,
-    ...(categories ?? []).map((category: CategorySummary) => ({ path: `/categories/${category.slug}`, changeFrequency: "daily" as const, priority: 0.75, source: "category" })),
-    ...(products?.items ?? []).map((product: ProductSummary) => ({ path: `/products/${product.slug}`, changeFrequency: "daily" as const, priority: 0.7, source: "product" })),
-    ...(stores ?? []).map((store: StoreProfile) => ({ path: `/stores/${store.slug}`, changeFrequency: "weekly" as const, priority: 0.65, source: "store" })),
-    ...(pages ?? []).map((page: CmsPage) => ({ path: `/${page.slug}`, changeFrequency: "monthly" as const, priority: 0.45, source: "cms_page" }))
+    ...(categories ?? []).map((category: CategorySummary) => ({ path: `/categories/${category.slug}`, changeFrequency: "daily" as const, priority: 0.85, source: "category" })),
+    ...(products?.items ?? []).map((product: ProductSummary) => ({ path: `/products/${product.slug}`, changeFrequency: "daily" as const, priority: 0.8, source: "product" })),
+    ...(stores ?? []).map((store: StoreProfile) => ({ path: `/stores/${store.slug}`, changeFrequency: "daily" as const, priority: 0.8, source: "store" })),
+    ...(pages ?? []).map((page: CmsPage) => ({ path: `/${page.slug}`, changeFrequency: "monthly" as const, priority: 0.5, source: "cms_page" }))
   ];
 }
 
@@ -539,6 +585,7 @@ export function normalizeSeoAnalyticsSettings(
 function environmentSeoSettings(): SeoAnalyticsSettings {
   return normalizeSeoAnalyticsSettings({
     googleAnalyticsId: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+    googleSearchConsoleId: process.env.NEXT_PUBLIC_GOOGLE_SEARCH_CONSOLE_ID ?? process.env.GOOGLE_SEARCH_CONSOLE_ID,
     googleTagManagerId: process.env.NEXT_PUBLIC_GTM_ID,
     googleAdsId: process.env.NEXT_PUBLIC_GOOGLE_ADS_ID,
   });

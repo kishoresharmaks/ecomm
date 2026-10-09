@@ -1,18 +1,17 @@
 # AGENTS.md - 1HandIndia Workspace Instructions
 
-This workspace is for the 1HandIndia multi-vendor ecommerce marketplace. Treat it as a serious production portal project, not a small demo.
- 
+Production multi-vendor ecommerce marketplace. Treat it as a serious production portal, not a demo.
+Current build status, completed modules and verification history live in `docs/STATUS.md` (read it when you need to know what exists; do not copy it back into this file).
 
+## 1. First Read Order
 
-## First Read Order
+Read these before making project decisions or writing code (skip ones irrelevant to a pure question or doc-only task):
 
-Before making project decisions or writing code, read these files in order:
-
-1. `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`
+1. `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md` (active scope source)
 2. `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`
 3. `docs/IndiHub_PROJECT_SCOPE_AND_REQUIREMENTS.md`
 4. `docs/IndiHub_BUILD_BLUEPRINT_MNC_PORTAL.md`
-5. `docs/IndiHub_FINAL_TECH_STACK_LOCK.md`
+5. `docs/IndiHub_FINAL_TECH_STACK_LOCK.md` (locked tech stack source)
 6. `docs/IndiHub_TECH_STACK_DECISION.md`
 7. `docs/IndiHub_REQUIREMENT_COLLECTION_CHECKLIST.md`
 8. `docs/IndiHub_BRAND_DIRECTION.md`
@@ -20,254 +19,135 @@ Before making project decisions or writing code, read these files in order:
 10. `docs/WORKSPACE_SKILL_LOADING_GUIDE.md`
 11. `.agents/skills/beeshub-marketplace/SKILL.md`
 
-## Product Target
+**Naming note:** the product is **1HandIndia**. `IndiHub` survives in doc filenames, the package scope (`@indihub/*`) and env var prefixes; `beeshub-marketplace` is the skill folder name. Do not rename these without approval.
 
-Build 1HandIndia as a professional marketplace portal with the operational depth of a large ecommerce platform:
+## 2. Product Target
 
-- Customer storefront.
-- Vendor/seller center.
-- B2B buyer portal.
-- Admin control panel.
-- Mobile apps.
-- Courier workflow.
-- Seller payouts.
-- Advanced analytics.
-- Trust, safety, support, and audit controls.
+A professional marketplace with the operational depth of a large ecommerce platform:
+customer storefront, vendor/seller center, B2B buyer portal, admin control panel, finance workspace, delivery partner workspace, mobile apps, courier workflow, seller payouts, analytics, and trust/safety/support/audit controls.
 
-Customer and seller experiences must be treated as separate applications, even when they share the same monorepo, backend, database, brand system, or web deployment. Plan screens, navigation, authentication entry points, QA flows, and future mobile apps separately for customer and seller.
+- Customer and seller experiences are **separate applications** even when they share the monorepo, backend, database, brand system or web deployment. Plan screens, navigation, auth entry points, QA flows and mobile apps separately.
+- Keep admin, seller, customer, B2B, finance and delivery experiences clearly separated.
+- Do not copy Flipkart/Amazon (or any competitor) branding, UI, text or protected content. Extract the functional requirement only (e.g. "mobile app download promo") and implement it with 1HandIndia's brand, typography and original copy.
 
-Do not copy Flipkart branding, UI, protected content, or proprietary design. The requirement is only to match the seriousness, polish, and feature completeness expected from a large ecommerce marketplace.
+## 3. Scope Rules
 
-## Scope Rule
-
-The active implementation governance source is:
-
-`docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`
-
-Historical Phase 1 documents remain useful for budget, client approval, and earlier implementation context, but they no longer limit the completeness of selected features. If the user approves or asks for a feature, implement the complete production marketplace version across the required backend, UI, permissions, audit, settings, provider, and test surfaces.
-
-## Skill Guidance
-
-Use these skill types during future work:
-
-- `technical-writer` for client-facing and internal documentation.
-- `project-planner` for roadmap, milestones, dependencies, and work breakdown.
-- `fullstack-developer` for architecture, APIs, database, auth, and integrations.
-- `frontend-skill` for polished UI/UX expectations.
-- `api-design-ks` for production API contracts.
-- `next-best-practices` if Next.js is chosen.
-- `react-best-practices` after editing multiple React/TSX components.
-- `code-reviewer` for security, performance, and production-readiness reviews.
-- `debugger` when fixing concrete runtime errors.
-- `verification` when a dev server or full flow needs end-to-end validation.
-
-## Engineering Rules
-
-- Keep business scope and implementation scope aligned.
+- Active governance: `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`. Phase 1 documents are history (budget, approvals) and no longer limit the completeness of a selected feature.
+- If the user approves or asks for a feature, implement the complete production version **of that feature** across backend, UI, permissions, audit, settings, provider and test surfaces. Do not use "Phase 1", "basic only", "future scope" or "later upgrade" language to shrink a selected feature.
 - Do not silently remove client-approved features.
-- Mark third-party fees, account approvals, and provider delays separately from development work.
-- Use role-based access control from the beginning.
-- Use audit logs for admin, vendor, payout, product, order, and policy-sensitive actions.
-- Validate all user and vendor inputs.
-- Keep admin, seller, customer, and B2B experiences clearly separated.
-- Make the UI polished, responsive, and operationally useful.
-- Prefer structured documents and typed schemas over ad hoc notes.
-- Before a major implementation step, confirm the chosen stack and generated app structure.
-- Do not use generic Phase 1, basic-only, future-scope, or later-upgrade language to reduce an actively selected feature.
-- Use `docs/IndiHub_FINAL_TECH_STACK_LOCK.md` as the current locked product technology source.
-- **Production-Ready Terminology**: Strictly avoid internal system terminology (e.g., "Admin review workflow", "Capability-based menus") in all UI copy. Always use polished, customer/seller-facing language (e.g., "Quality assured marketplace", "Tailored dashboard") to maintain a premium product feel.
-- **Distinct Portal Identity**: When writing UI copy or headers for the seller/vendor module, never use the generic marketplace name alone (e.g., "Welcome to 1HandIndia"). Always use the distinct, approved seller portal name (e.g., "1HandIndia Seller Hub") to maintain a clear boundary between the B2C customer storefront and the B2B partner experience.
-- **Prevent Literal Widening**: When returning default or fallback objects from hooks, always explicitly type or use `as const` on string literals (e.g., `status: "signed-out" as const`) to prevent TypeScript from widening the union to `string`, which silently disables strict equality checks for consumers.
-- **Strict Brand Adherence**: NEVER introduce unapproved primary theme colors (e.g., deep navy, black themes, or generic dark modes) into large UI surfaces. Strictly use the locked brand palette (`#ED3500` primary, `#FFFCFB` secondary) for all marketing, landing, and structural page elements.
-- **Competitor Independence**: Never directly copy proprietary layouts, exact text, or specific UI components from competitor marketplaces (e.g., Amazon, Flipkart) provided as reference. Instead, extract the core functional requirement (e.g., "Mobile App Download Promo") and implement it using strictly 1HandIndia's brand guidelines, typography, and original production-ready terminology.
-- **Authenticated File Downloads**: When implementing file downloads (e.g., Export CSV, PDF receipts) that require an authenticated backend API, NEVER use a standard `<a href={url} download>` tag. Standard anchor tags drop the `Authorization` header. Always use a `fetch` request with the required auth headers to get a `Blob`, create a temporary object URL via `URL.createObjectURL`, and programmatically click a hidden anchor tag to trigger the browser download.
-- **Transparent Redis Fallback**: Any implementation using Redis or BullMQ for caching, queueing, or rate-limiting MUST provide an automatic, silent fallback to synchronous execution, database polling, or local in-memory Map caches if the `REDIS_URL` environment variable is not defined or is unavailable at runtime. The application must bootstrap and function correctly in fallback mode.
-- **Strict Fallback Semantics**: When applying fallback or default values (e.g., package dimensions, settings), use them strictly as replacements for missing, null, or zero values. NEVER use `Math.max()` or similar bounds to silently override an explicit, valid user input with a fallback value.
+- Mark third-party fees, account approvals and provider delays separately from development work.
+- **Scope precedence (resolves "complete feature" vs "minimal edit"):** be complete *within the requested feature and its own files*; touch nothing outside it. If finishing properly requires changing another subsystem, shared file, or DB schema outside the request, explain why and get explicit user approval first.
 
-## Current Status
+## 4. Mandatory Prompt Execution Protocol
 
-Last updated: 2026-06-08.
+For every prompt, in order:
 
-Foundation and scope:
+1. **Analyze & extract constraints** - parse requirements, bug reports, attached visuals; note explicit constraints (e.g. "don't push to git", exact colors, behavior to preserve).
+2. **Inspect existing code first** - read the current implementation, component structure and data flow before editing. Diagnose the concrete root cause before changing anything.
+3. **Minimal scope** - touch only the files/lines the request needs. Do not remove, redesign, refactor or add unrelated features, elements or styles. Cross-subsystem changes need approval (see Scope precedence).
+4. **Apply domain skills** from `.agents/skills/` (see section 5).
+5. **Precise execution** - surgical, targeted edits. Preserve type safety, accessibility and error handling.
+6. **Verify, scaled to the change:**
+   - Questions, explanations, doc-only edits: no gate.
+   - Code changes: run typecheck, lint and tests for the affected package(s) once per logical unit of completed work (`pnpm --filter <pkg> typecheck|lint|test`; add `build` for web/API changes that affect routes or build output; `pnpm db:validate` for schema changes). Do not run commands speculatively.
+   - Report any failure honestly; never claim a gate passed without running it.
+7. **Report concisely** - exact changes, modified files, verification outcome. Honor all workspace rules and user instructions.
 
-- Documentation workspace is prepared.
-- Historical Phase 1 documents are retained for budget and approval history.
-- Active scope governance now requires full production implementation for any selected feature.
-- The current product technology stack is locked.
-- Approved project budget is INR 200,000.
-- UI screen list and database plan are prepared.
-- Brand palette is locked for all web portals: primary `#ED3500`, secondary `#FFFCFB`.
-- Implementation uses the locked Turborepo, Next.js web app, NestJS API, worker app, shared packages, PostgreSQL, Prisma, and Clerk foundation.
+## 5. Skill Guidance
 
-Completed or substantially implemented:
+- `beeshub-marketplace` - marketplace scope, architecture, governance.
+- `backend-db-architecture` - PostgreSQL, Prisma, transactions, indexing, concurrency, ledger integrity.
+- `backend-api-design` - NestJS REST contracts, DTO validation, multi-tier RBAC, webhook security, rate limiting.
+- `ecommerce-operations` - order split lifecycle, pricing security, statutory taxes (1% TDS / 1% TCS), payouts, courier logistics.
+- `frontend-craftsmanship` - Next.js App Router, React performance, TanStack Query, accessibility, brand UI discipline.
+- `frontend-design` - visual direction, typography, UX layout, distinct portal identities.
+- `technical-writer`, `project-planner`, `code-reviewer`, `debugger`, `verification` - docs, roadmaps, reviews, runtime bug fixing, end-to-end validation.
 
-- Auth foundation is implemented with Clerk frontend sessions for customer/seller/B2B flows, stale-token refresh/retry, production-safe session-expired UI copy, API token verification, app user sync, local-dev fallback headers for non-admin development, RBAC guards, and role checks.
-- Admin now uses a standalone email/password login and DB-backed admin session tokens. Admin API routes do not accept Clerk sessions or local-dev user headers for admin-only access.
-- Admin portal UI now uses an admin-only login gate: `/admin` shows the standalone admin login when signed out, signed-out admin subroutes return to the requested route after login, stored admin sessions are revalidated through `/api/admin/auth/me`, and the full admin sidebar/navigation only appears after standalone admin authentication.
-- Clerk JWT verification was fixed for local development. Matching frontend/backend Clerk keys are required, and `CLERK_JWT_KEY` is supported.
-- Customer module is implemented end to end: account overview, profile, addresses, wishlist, cart, checkout, order placement, order history/detail, cancellation, public order tracking, and support requests.
-- Customer backend APIs are implemented for profile, addresses, wishlist, cart, checkout/orders, tracking, cancellation, and support.
-- Customer bugs already fixed include concurrent customer/wishlist creation, default address promotion, suspended-seller checkout/wishlist blocks, stale stock decrement, unavailable variant selection, and read-only profile email.
-- Storefront product listing/detail, cart, checkout, order success, tracking, CMS policy pages, CMS homepage banners/sections, and public support/contact flows are present.
-- Buyer checkout platform fee is implemented separately from seller commission/settlement fees. Admin settings can enable percentage-of-subtotal or fixed-per-order buyer-facing platform fee through an atomic save, checkout/cart read server-priced totals, and orders store INR plus buyer-currency fee snapshots.
-- Razorpay/COD payments are now wired beyond backend readiness: admins can configure Razorpay test/live mode, key ID, key secret, webhook secret, COD enablement, COD max order value/instructions, bank transfer, and manual payment from `/admin/payments`; Razorpay checkout orders are created server-side, the storefront opens Razorpay Checkout for Razorpay orders, checkout callback signatures are verified server-side before payment state refresh, verified captured Razorpay payments mark the order payment status as `PAID`, COD orders remain `PENDING`, webhook signatures use raw-body validation, late failed webhooks cannot downgrade an already paid payment, and duplicate checkout submits for the same cart are blocked transactionally.
-- Finance Manager workspace is implemented as a back-office finance surface: `FINANCE` users sign into `/finance` with standalone credentials, admins can also access it, finance users are blocked from full admin-only routes, and the workspace covers dashboard metrics, COD collection verification, bank transfer verification with UTR/reference capture, payment status control, settlements, payouts, ledger, statements, reports, payment settings, and checkout platform fee controls.
-- Seller/admin/B2B backend foundation is present: seller product submission, admin product approval, B2B enquiry/response flow, admin readback, CMS, support, settings, reports, audit logs, payment readiness, notification logs, and storage readiness.
-- Seller center is implemented and verified for marketplace operations: authenticated onboarding/registration, pending/approved seller states, dashboard, viewport-aware seller sidebar/navigation, profile editing with normalized location selectors, asset-key-based logo/banner upload, product list/create/edit/archive with asset-key-based product images, seller order list/detail, seller-side order status updates, manual delivery updates, B2B enquiry response, and sales report screens.
-- Seller order fulfilment is wired end to end: seller status changes update the seller split transactionally, roll up order/delivery status where appropriate, write seller/order/delivery timeline events, preserve the existing payment status during fulfilment updates, keep settlement eligibility aligned for delivered paid orders, and return only that seller's own order items/split in seller APIs.
-- Delivery partner web workspace is implemented: admins can assign an active `DELIVERY_PARTNER` user from the admin order delivery form, delivery partners can open `/delivery`, `/delivery/orders`, and `/delivery/orders/[orderNumber]`, only assigned orders are visible, delivery progress/tracking/date/note updates roll into normal order/delivery/seller timelines, delivery partners can record COD cash collected with amount and note, and admin verifies/rejects the collection from the admin order detail before COD is marked `PAID`.
-- Seller finance is implemented as a standalone module: admin-managed commission/GST/TDS/TCS/platform-fee rules, settlement drafts, payout approval/mark-paid flow, append-only seller ledger, and downloadable seller statements, with seller read-only wallet/payout/statement pages.
-- Seller-requested manual payouts are implemented: sellers maintain private bank/UPI payout details, see eligible delivered/paid payout availability, request the full currently eligible manual payout, and the backend transactionally locks eligible order splits to prevent duplicate requests. Admin finance keeps approve/reject/mark-paid controls, manual payment references, audit logs, events, statements, and ledger posting.
-- B2B buyer portal frontend is implemented: `/b2b`, `/b2b/register`, `/b2b/company-profile`, `/b2b/enquiries`, `/b2b/enquiries/new`, `/b2b/enquiries/[id]`, `/b2b/sign-in`, and `/b2b/sign-up`. It supports first-time business profile onboarding from a signed-in customer account, normalized procurement addresses, enquiry list/search/status filtering, product/seller enquiry creation, response detail display, buyer-side cancellation, buyer quotation confirmation, and admin approval/finalisation.
-- B2B enquiry status workflow is now enforced end to end: seller/admin responses move enquiries to `RESPONDED`, buyers can confirm responded quotations as `BUYER_CONFIRMED`, admins can approve confirmed enquiries as `ADMIN_APPROVED`, and admins can finalise approved enquiries as `FINALISED`. Seller responses and buyer cancellations are locked after buyer confirmation.
-- Public store pages are present through `/stores` and `/stores/[slug]`, so approved sellers can have customer-facing storefront pages.
-- Admin control panel is implemented for marketplace operations: dashboard, customers, users/roles, sellers, seller approvals, products/product approvals, orders/order detail, B2B enquiries, business buyers, support, CMS pages/banners/sections, categories, reports, locations/import coverage, notifications, payment readiness, storage readiness, audit logs, and platform settings.
-- Transactional email tracking is fully documented and surfaced in admin notifications: app-owned account, seller, product, order, payment, B2B, and support emails create notification logs with rendered subject/body, context variables, provider id/error, status, retry support, and a full event matrix in `docs/IndiHub_EMAIL_NOTIFICATION_TRACKING.md`. Supported app providers are SMTP bridge/dev log, Brevo, Resend, and SendGrid. Clerk and provider-side emails remain outside app logs by design.
-- Admin dashboard has been redesigned as a compact operations command center with a polished welcome header, tighter live KPI cards, operations chart, quick actions, recent orders, platform health, and sales analytics. The `/admin` route hides the normal page-title band so the dashboard has a dedicated executive layout while other admin pages keep breadcrumbs and actions.
-- Admin homepage banner create/edit is structured for non-technical operation: title, subtitle, managed image upload/preview, link, status, and sort order. Published banners power the storefront hero through `GET /api/cms/banners`.
-- Admin homepage section create/edit uses guided non-JSON fields for section type, title, small label, description, CTA, sort/status, and repeatable item rows, so non-technical admins do not need to write JSON for homepage blocks. Featured category/product/store sections load existing admin records dynamically for one-click selection, and published sections are read by the storefront through `GET /api/cms/homepage-sections`.
-- Admin sidebar/navigation is now responsive, scrollable, and active-route aware for the larger admin surface.
-- Admin remove/delete coverage is implemented with safe semantics: users/customers/business buyers can be disabled, sellers can be suspended, orders/B2B/support can be closed or cancelled through status workflows, categories and products can be archived, CMS pages can be archived, and CMS banners/homepage sections can be deleted with audit-backed admin APIs.
-- Branded Headless UI confirmation modals now guard destructive or lifecycle-changing actions across customer cart/account actions, seller product archive, B2B buyer cancellation/quotation confirmation, admin seller/product/B2B/user/customer actions, admin finance payout/settlement actions, and admin location coverage toggles. Native browser `confirm`, `alert`, and `prompt` calls are absent from app source.
-- Admin Users & Roles page has an explicit responsive role-management layout: assigned roles render as removable chips, new roles are added from remaining available roles, mutation errors are visible, and mobile users see stacked management cards.
-- Admin report calculations exclude cancelled orders from sales/product/seller revenue metrics and use database aggregates for seller/product report totals instead of loading unbounded transaction rows into memory.
-- Location infrastructure is implemented: DB-backed countries, states/provinces, cities, local areas, import/refresh runs, admin coverage view, and async local-area search selectors.
-- India location data is loaded for current development DB: 36 states/union territories, 631 district/city nodes, and more than 154k local-area/pincode rows from the Department of Posts/data.gov.in CSV import path. The API path was rate-limited, so the supported bulk CSV fallback is used for now.
-- Multi-country/currency readiness is implemented for the approved markets India, UAE, US, UK, and Singapore, with Frankfurter as the free FX provider and DB caching.
-- Backend Prisma transaction cleanup is complete for application code: array-form `$transaction([ ... ])` usage was removed from `apps/api/src`, read-only finance collection listing no longer uses an interactive transaction, seller order status transactions avoid full relation fan-out reads, and API tests pass with Node deprecations treated as failures.
+## 6. Repo Map & Environment
 
-Latest verified gates:
+- Turborepo monorepo: `apps/web` (Next.js **16.2.6**), `apps/api` (NestJS), `apps/worker` (plain Node polling app), `apps/mobile` (Expo/React Native), `packages/*` (shared, incl. `@indihub/database` Prisma client), `prisma/`.
+- Next.js 15+ async `params`/`searchParams` APIs apply (`const { requestNumber } = await params;`). Account for this when diagnosing related bugs.
+- Local web: `http://localhost:3000`. Local API: `http://localhost:4000/api`. Always verify running processes before assuming they are active.
+- This workspace may not be a git checkout - use direct file inspection rather than relying on `git status`/`git diff`.
+- **Windows PowerShell:** chain dependent commands with `; if ($LASTEXITCODE -eq 0) { next } else { exit 1 }`. Never use `&&`. Use `pnpm.cmd` where `pnpm` is not resolved. Batch typecheck/test/lint into one pipeline.
+- Standalone admin login needs backend env `INDIHUB_FIRST_ADMIN_EMAIL` and `INDIHUB_FIRST_ADMIN_PASSWORD` for first setup; optional `ADMIN_SESSION_TTL_HOURS`.
+- Clerk: matching frontend/backend keys are required; `CLERK_JWT_KEY` is supported.
 
-- `pnpm.cmd db:validate` passes.
-- `pnpm.cmd --filter @indihub/api typecheck` passes.
-- `pnpm.cmd --filter @indihub/api lint` passes.
-- `pnpm.cmd --filter @indihub/api test` passes with 20 test files and 75 tests.
-- `pnpm.cmd --filter @indihub/web typecheck` passes.
-- `pnpm.cmd --filter @indihub/web lint` passes.
-- `pnpm.cmd --filter @indihub/web build` passes and includes customer, seller, B2B, delivery partner, admin, and finance routes, including delivery routes under `/delivery/*`, B2B routes under `/b2b/*`, admin finance routes under `/admin/finance/*`, finance manager routes under `/finance/*`, seller finance routes under `/seller/finance/*`, and `/admin/settings/general`.
-- `pnpm.cmd --filter @indihub/web test` passes with 3 web test files and 6 tests covering stale Clerk bearer-token retry, user-facing auth error sanitisation, local-area display-label search normalization, and admin setting value coercion.
-- Seller-side live DB readiness was checked: sellers exist, approved sellers exist, products exist, and India location coverage is available to seller profile/onboarding selectors.
-- 2026-05-26 modal/docs refresh verification: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass.
-- 2026-05-26 payment admin/COD/concurrency verification: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api test`, `pnpm.cmd --filter @indihub/api build`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass.
-- 2026-05-26 homepage CMS storefront verification: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api test`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass. API integration covers admin-created published homepage banners appearing in `GET /api/cms/banners` and published homepage sections appearing in `GET /api/cms/homepage-sections`, while draft records remain hidden.
-- 2026-05-26 seller auth expiry polish verification: `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass. Web unit coverage verifies stale Clerk bearer-token refresh and sanitized user-facing auth errors.
-- 2026-05-26 seller manual payout request verification: `pnpm.cmd run db:generate`, `pnpm.cmd db:validate`, `pnpm.cmd run db:push`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api test`, `pnpm.cmd --filter @indihub/api build`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass.
-- 2026-05-26 seller order status/timeline verification: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api test`, `pnpm.cmd --filter @indihub/api build`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass. API integration covers seller accept/dispatched transitions, seller/order/delivery timeline events, and seller-only order item/split response filtering.
-- 2026-05-26 customer payment and seller fulfilment verification: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api test`, and `pnpm.cmd --filter @indihub/api build` pass. API integration covers COD order placement staying `PENDING`, Razorpay order placement staying `PENDING` until verified captured checkout payment, verified Razorpay payment marking the order `PAID`, and seller fulfilment status updates preserving `paymentStatus`.
-- 2026-05-26 delivery partner workspace verification: `pnpm.cmd run db:generate`, `pnpm.cmd db:validate`, `pnpm.cmd run db:push`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api test`, `pnpm.cmd --filter @indihub/api build`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass. API integration covers admin delivery-partner assignment, delivery-partner-only order visibility, forbidden seller access to delivery routes, delivery progress updates rolling up to order/seller timelines, and COD staying `PENDING` after delivery.
-- 2026-05-26 delivery COD collection verification: `pnpm.cmd run db:generate`, `pnpm.cmd db:validate`, `pnpm.cmd run db:push`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api test`, `pnpm.cmd --filter @indihub/api build`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test`, and `pnpm.cmd --filter @indihub/web build` pass. API integration covers delivery partner COD collection recording, payment staying `PENDING` until admin verification, admin verification marking COD payment `PAID`, and delivered paid seller splits becoming settlement-eligible.
-- 2026-05-26 admin dashboard/runtime export verification: fixed the `CodCollectionStatus` runtime export for `npm run dev`, smoke-started the API with `npm.cmd run dev` on temporary port 4011, then stopped it. `pnpm.cmd --filter @indihub/database typecheck`, database lint, API typecheck/lint/test/build, and web typecheck/lint/test/build pass. Web production build includes `/admin`.
-- 2026-05-26 admin dashboard compact layout refresh: removed the dashboard Recent Activity panel, tightened dashboard spacing/card sizes, and kept the dashboard focused on KPIs, operations, quick actions, recent orders, platform health, and sales analytics. `pnpm.cmd --filter @indihub/web typecheck`, web lint, web test, and web build pass.
-- 2026-05-26 platform settings persistence verification: checkout platform fee settings now save atomically through `/api/admin/settings/checkout/platform-fee`, the admin UI clearly separates unsaved local changes from applied settings, and API integration verifies admin save/readback feeding cart checkout summary. `pnpm.cmd db:validate`, API typecheck/lint/test/build, and web typecheck/lint/test/build pass.
-- 2026-05-26 admin checkout/payment toggle UX refresh: `/admin/settings/general` checkout and payment toggles now stage changes locally, show an unsaved/saved status, and apply COD/Razorpay/bank-transfer/manual toggles together through the existing payment configuration save. Web typecheck/lint/test/build pass.
-- 2026-05-26 email notification tracking verification: notification logs now persist rendered subject/body/context variables, retries reuse the stored variables, duplicate customer fulfilment emails are avoided when order and delivery statuses map to the same template, `/admin/notifications` shows subject/body/context/provider traceability, and `docs/IndiHub_EMAIL_NOTIFICATION_TRACKING.md` documents every app-owned email trigger. `pnpm.cmd run db:generate`, `pnpm.cmd db:validate`, `pnpm.cmd run db:push`, database typecheck, API typecheck/lint/test/build, and web typecheck/lint/test/build pass.
-- 2026-05-26 Finance Manager workspace verification: `FINANCE` users can sign into `/finance`, access finance/payment/platform-fee APIs, and are forbidden from full admin users/products/settings surfaces. Bank transfer checkout details and UTR/reference capture are wired through checkout, finance verification marks eligible offline payments/orders paid with audit/payment events, and finance reports summarize payment/settlement/payout state. `pnpm.cmd run db:generate`, `pnpm.cmd db:validate`, API typecheck/lint/test/build, web typecheck/lint/test/build, and a source scan for native `confirm`/`alert`/`prompt` calls pass.
-- 2026-05-26 Brevo email provider verification: `brevo` is supported through the Brevo transactional email API using `BREVO_API_KEY`, admin email settings use a provider picker for SMTP/Brevo/Resend/SendGrid, and docs include Brevo setup. API typecheck/lint/test/build and web typecheck/lint/test/build pass.
-- 2026-05-26 settings persistence hardening: `prisma/seed.ts` no longer overwrites existing platform `Setting` values or the existing `EmailSetting`, so admin-saved checkout/payment/platform-fee/email configuration survives seed reruns during local/dev/deploy bootstrap. Settings page form state now avoids overwriting unsaved checkout/payment toggle and platform-fee edits during background refetches. `pnpm.cmd db:validate`, API typecheck/lint/test/build, and web typecheck/lint/test/build pass.
-- 2026-05-26 admin settings readback hardening: API and admin UI setting readers now coerce legacy string/number boolean values and string-stored numbers for checkout payment toggles, checkout platform fee, payout settings, payment readiness, and checkout pricing, so saved settings do not appear reset after dev-server restart or old DB rows. API tests include deprecations-as-errors and pass with 20 files/75 tests; web tests pass with 3 files/6 tests; `pnpm.cmd db:validate`, API typecheck/lint/build, web typecheck/lint/build pass.
-- 2026-05-26 production seed safety hardening: `pnpm db:seed` now runs schema-only and creates or updates no data by default. Seed write modes are explicit through `pnpm db:seed:system` for RBAC reference rows and `pnpm db:seed:bootstrap` for local/dev bootstrap rows; production-like write modes are blocked unless `INDIHUB_ALLOW_PRODUCTION_SEED=true` is set for an approved one-time operation. Verification: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd db:seed` passed as no-write schema mode, and production-like `pnpm.cmd db:seed:bootstrap` refused to run before writes.
-- 2026-05-26 local-area selector UX fix: selected local-area labels like `Mettu Street (636001)` now continue searching by area name/pincode instead of showing a false `No matching local areas` dropdown. The selected area is retained while async results refresh, and the public locations API also accepts display-label search terms. API/web typecheck, lint, test, and build pass.
+## 7. Data Safety & Secrets
 
-Important caveats:
+- Never print Clerk or provider secrets from `.env` files. Report only key names, lengths or presence.
+- The connected DB may be pre-production/staging. Do **not** run DB-writing integration tests, bootstrap seed modes, location imports, cleanup scripts or ad hoc mutation scripts against it without explicit approval of that exact write.
+- Backend integration tests are opt-in: local disposable PostgreSQL whose name contains `test`, `e2e` or `integration`, with `INDIHUB_ALLOW_INTEGRATION_TEST_DB=true`.
+- Seeding: `pnpm db:seed` is schema-only (no data). `pnpm db:seed:system` = RBAC reference rows. `pnpm db:seed:bootstrap` = local/dev bootstrap only. Production-like write modes require `INDIHUB_ALLOW_PRODUCTION_SEED=true` for an approved one-time operation. Seeds must never overwrite existing platform `Setting` values or `EmailSetting`.
 
-- This workspace is not currently a git checkout, so use direct file inspection instead of relying on `git status` or `git diff`.
+## 8. Engineering Rules
 
-## Admin UI UX for Technical Fields
+### 8.1 General
+- Role-based access control from the start; audit logs for admin, vendor, payout, product, order and policy-sensitive actions.
+- Validate all user and vendor input. Prefer structured documents and typed schemas over ad hoc notes.
+- Confirm the chosen stack and generated app structure before a major implementation step.
+- **Prevent literal widening:** when returning default/fallback objects from hooks, type them explicitly or use `as const` (`status: "signed-out" as const`) so unions are not widened to `string`.
+- **Strict fallback semantics:** fallback/default values replace only missing, null or zero values. Never use `Math.max()` or similar to override an explicit, valid user input with a fallback.
+- **Transparent Redis fallback:** anything using Redis/BullMQ (cache, queue, rate limit) must silently fall back to synchronous execution, DB polling or in-memory `Map` when `REDIS_URL` is undefined or unavailable. The app must bootstrap and work in fallback mode.
+- **Authenticated file downloads:** never use `<a href download>` for endpoints needing the `Authorization` header. `fetch` with auth headers -> `Blob` -> `URL.createObjectURL` -> programmatic click on a hidden anchor.
+- **Worker/API boundary:** `apps/worker` is not NestJS (no `@nestjs/schedule`, no API DI providers). Simple DB updates: use the shared `@indihub/database` Prisma client directly. Complex domain operations (geospatial, assignment, state machines): do not duplicate API logic - add an `@Controller("internal/...")` endpoint in `apps/api`, protect it with an internal secret header, and have the worker call it via `fetch`.
+- **API payload hygiene:** never expose internal diagnostics, `snapshot` fields or routing/audit traces in public/customer API responses. Keep them in the DB or authenticated admin APIs; trim public responses to what the UI renders.
+- **Type-safe DTO propagation:** when adding a DB field (e.g. `maxWeightKg`), add it explicitly to the relevant `Prisma.select` (e.g. `checkoutSummaryItems`) before passing it onward, to avoid silent `any` widening or `undefined` at runtime.
+- **Delivery status updates:** when changing delivery status in `orders.service.ts` (including shared delivery update flows), update `orderShipment` **and** `orderShipmentPackage` together, deriving the package status with `this.packageStatusFromDeliveryStatus`. Courier and other workspaces depend on `orderShipmentPackage.status`.
+- **Domain-strict querying:** never filter operational queries on status alone (`UNASSIGNED`, `PACKED`). Always scope by the domain discriminator (e.g. `deliveryMode: LOCAL_DELIVERY_PARTNER`) so one domain's records never leak into another's workspace.
 
-When building or updating Admin Control Panel forms, if a field uses a technical financial unit (like BPS - Basis Points), you must include an inline Info tooltip (e.g., an `Info` icon with a tooltip) or clear helper text below the field.
+### 8.2 UI, Brand & Copy
+- **Locked palette:** primary `#ED3500`, secondary `#FFFCFB`, text `#101828`. Never introduce unapproved primary theme colors (deep navy, black themes, generic dark modes) on large surfaces, marketing, landing or structural elements.
+- **Production-ready language:** no internal system terms in UI copy ("Admin review workflow", "Capability-based menus"). Use customer/seller-facing language ("Quality assured marketplace", "Tailored dashboard").
+- **Portal identity:** seller/vendor UI copy and headers use **"1HandIndia Seller Hub"**, never the bare marketplace name ("Welcome to 1HandIndia").
+- UI must be polished, responsive and operationally useful. Use branded Headless UI confirmation modals for destructive/lifecycle actions; no native `confirm`/`alert`/`prompt`.
+- **Admin technical fields:** any field using a technical financial unit needs an inline Info tooltip or helper text. For BPS fields always state `100 BPS = 1%` and one sentence on what the field does (e.g. "Reduces the marketplace commission for sellers on this plan"). Do not assume admins know financial jargon.
 
-- For BPS fields, always explain the conversion: `100 BPS = 1%`.
-- Provide a brief sentence on what the field actually does (e.g., "Reduces the marketplace commission for sellers on this plan").
-- Do not assume non-technical admins know financial jargon.
-- Do not print Clerk or provider secrets from `.env` files. Only report key names, lengths, or configuration presence when needed.
-- Standalone admin login needs backend env `INDIHUB_FIRST_ADMIN_EMAIL` and `INDIHUB_FIRST_ADMIN_PASSWORD` for first setup, with optional `ADMIN_SESSION_TTL_HOURS`.
-- `pnpm db:seed` is production-safe schema-only and creates no data by default. Use `pnpm db:seed:system` only for approved RBAC reference setup and `pnpm db:seed:bootstrap` only for local/dev or approved one-time bootstrap. Production-like write modes require `INDIHUB_ALLOW_PRODUCTION_SEED=true`.
-- The currently connected DB may be pre-production/staging. Do not run DB-writing integration tests, bootstrap seed modes, location imports, cleanup scripts, or ad hoc mutation scripts against it unless the user explicitly approves that exact write operation. The backend integration suite is opt-in only and must use a local disposable PostgreSQL database whose name includes `test`, `e2e`, or `integration` with `INDIHUB_ALLOW_INTEGRATION_TEST_DB=true`.
-- Local web normally runs at `http://localhost:3000`; local API normally runs at `http://localhost:4000/api`, but always verify running processes before assuming they are active.
-- Browser/manual QA was not run in the latest verification pass because no web/API dev server pair was started for a full interactive session. The code/build/API gates are green.
-- Razorpay keys and COD rules can be managed from `/admin/payments`; real Razorpay activation still requires an approved Razorpay account, valid test/live keys, Dashboard webhook URL/secret configuration for the deployed domain, and a real Razorpay test-mode transaction.
+### 8.3 Database & Indexing
+1. **Index every foreign key.** Every `@relation(fields: [...])` needs an index (hot paths like `cart_items.product_variant_id`, `order_items.product_variant_id`, and audit/admin FKs like `cancelled_by`, `verified_by`). A composite index that *starts with* the FK is sufficient; otherwise add `@@index([foreignKeyId])`.
+2. **No redundant single-column indexes.** Skip `@@index([status])` if a composite starting with that column (e.g. `[status, createdAt]`) or a `@unique` exists. Avoid write amplification on high-churn tables (orders, order items, notification logs).
+3. **Specialized index types:**
+   - Full-text: index `tsvector` columns with GIN: `@@index([searchVector], type: Gin)`.
+   - Fuzzy search (`products.name`, `sellers.storeName`): `pg_trgm`, with `postgresqlExtensions` in `previewFeatures` and `@@index([name(ops: raw("gin_trgm_ops"))], type: Gin)`.
+   - JSONB filtering (`@>`): `@@index([attributes(ops: raw("jsonb_path_ops"))], type: Gin)`.
+- Prisma: no array-form `$transaction([...])` in application code; use interactive transactions, and avoid interactive transactions for read-only listings.
 
-Recommended next work:
+### 8.4 Payments & Razorpay
+- Checkout totals are server-priced. Verify Razorpay callback signatures server-side; webhooks use raw-body signature validation; a late failed webhook must never downgrade an already paid payment; block duplicate checkout submits transactionally.
+- **Subscription signature (if subscription flows exist):** HMAC payload is always `payment_id + "|" + subscription_id` (not the standard order).
+- **Auto-healing test data:** before returning a stored Razorpay ID (e.g. `sub_xxxx`) to the client, verify it via Razorpay `GET`; on 404/dead status generate a fresh ID to avoid "The id provided does not exist" crashes after test-environment resets.
+- Settings readers must coerce legacy string/number boolean and numeric values so saved settings never appear reset.
 
-- Run browser-level end-to-end QA across auth sync, customer checkout, seller approval/product management, B2B enquiries, admin reports/settings, support, and location selectors after starting the web/API servers together.
-- Configure real provider accounts only when the client is ready: Razorpay, email provider, public/private storage providers, production database, production Clerk keys, and production domain/CORS.
+### 8.5 Finance & Money
+- **Strict financial assertions:** incoming financial amounts from external parties (e.g. delivery partner COD cash collected) must equal the expected `amountPaise` with strict `===`. Reject partial submissions entirely; never accept "greater than zero".
+- **Net Projected Exposure** (COD exposure, credit limits, etc.): never compare a static/lifetime gross amount to a limit. Compute inside a transactional row lock (`SELECT ... FOR UPDATE`):
+  `Net Projected Exposure = (Unsettled Gross Value) + (Assigned/Pending Future Liabilities) - (Prepaid/Deposit Wallet Balances)`
+  - Always add the value of the new assignment being evaluated.
+  - Negative net exposure is valid headroom; do not floor it to `0`.
+  - Any withdrawal flow for prepaid/offset wallets must enforce the same Net Projected Exposure check.
+- **Finance report derivation:** for seller tax/finance/sales summaries never read `_sum.netPayablePaise` (stale stamped values). Re-derive:
+  `netPayablePaise = grossSales - commission - gstOnCommission - tds - tcs - platformFee - couponSellerFundedDiscount + couponAdjustment + refundAdjustment`
+  This must match `FinanceCalculatorService.calculateSplit()`.
+- **Formula transparency:** when explaining financial reports, wallet balances or payouts, give the exact formula used in code and map backend names (`netPayablePaise`) to UI labels ("Net payable"). Do not summarize without the formula.
+- **Date filters:** when a seller/finance API `queryString()` helper receives `dateFrom`/`dateTo` as 10-char `YYYY-MM-DD`, convert to local-time ISO (`dateFrom` -> `T00:00:00.000`, `dateTo` -> `T23:59:59.999`) then `.toISOString()` for correct UTC bounds. Already applied to all 14 seller/finance API client files - do not revert.
+- **Reconciliation direction:** *new* high-volume financial handovers (e.g. COD collections) must be designed as zero-touch automated pipelines (Virtual Accounts such as Razorpay Smart Collect, webhooks, FIFO auto-reconciliation), not manual screenshot-approval flows. Existing manual COD/bank-transfer verification (admin/finance) is the current implementation, not the target design.
 
-- When updating delivery statuses in `orders.service.ts` (e.g., in shared delivery update flows), ensure that both `orderShipment` and `orderShipmentPackage` statuses are updated together. Use `this.packageStatusFromDeliveryStatus` to derive the correct package status, as downstream workspaces (like Courier) depend on `orderShipmentPackage.status`.
+### 8.6 Delivery, Routing & Checkout
+- **Enforce physical origins:** never assume a seller has a valid origin. Adding products, accepting orders or initiating shipments must first require at least one seller address with saved `latitude` and `longitude`. Hard-block instead of falling back to arbitrary "base" distances.
+- **Weight-based delivery boundaries:** restrict assignment at checkout, not via partner rejections. `Product.weightKg` (existing products default to `0kg`); `ShippingRateCard.maxWeightKg`; checkout pricing sums cart weight and, if it exceeds a rate card's `maxWeightKg`, that mode (e.g. Local Delivery) is unavailable, forcing Manual Transport or a heavy Courier.
+- **Single-pass routing:** evaluate all delivery modes in one batch (`resolveAllDeliveryOptions`) when computing `availableDeliveryOptions`. Never fan out concurrent `resolveDelivery`/routing calls via `Promise.all` where they share location, proximity or courier DB queries.
+- **Explicit unavailable states:** when a choice (delivery mode, payment method) is restricted by business rules (pincode coverage, weight limit, basket size, no local partners), return/render it as disabled with `available: false` and a clear `reason` (e.g. "Exceeds 5kg limit"). Do not silently filter it out.
+- **Delivery partner payouts:** static, predictable model (Base Pay + Per KM with a minimum floor). No surge pricing, milestone gamification or weather incentives unless explicitly requested.
 
-## Database Indexing Hygiene
+### 8.7 Mobile (`apps/mobile`)
+- **Domain boundaries:** tab content stays in its domain. B2B tabs: only B2B Enquiries and B2B Orders. Subscriptions live in Profile/Account. Returns live in Orders. Reviews, Coupons and Deals live in Sales or Products. Do not group unrelated features.
+- **Images:** render user-uploaded assets (logos, banners) with `expo-image` or RN `<Image>`, never text initials or "Ready" placeholders. Build the full URL from the API base URL plus the asset key.
+- **Aesthetics:** modern, professional spacing, shadows and premium card layouts; no minimum-viable styling.
+- **Banners/carousels:** no left/right arrow navigation; auto-slide every 3 seconds when more than one item; glassmorphism - backend-provided (especially dark) background colors rendered semi-transparent (e.g. `rgba(..., 0.8)`) or over a native blur view, never flat opaque.
 
-When modifying `schema.prisma` or creating new models, strictly adhere to the following index hygiene rules to prevent write-amplification and ensure optimal read performance:
+## 9. Definition of Done
 
-1. **Always Index Foreign Keys**: Every relation field (`@relation(fields: [foreignKeyId])`) must be supported by an index. This is critical for hot paths (e.g., `cart_items.product_variant_id`, `order_items.product_variant_id`) as well as audit/admin queries (e.g., `cancelled_by`, `verified_by`). If a composite index already begins with the foreign key, that is sufficient. Otherwise, add a dedicated `@@index([foreignKeyId])`.
-2. **No Redundant Single-Column Indexes**: Do not add a single-column index (e.g., `@@index([status])`) if there is already a composite index that starts with the same column (e.g., `@@index([status, createdAt])`) or a `@unique` constraint. PostgreSQL can efficiently use the leading column of a composite index for equality lookups. Redundant indexes provide zero read benefit while adding expensive write amplification on high-churn tables (orders, order items, notification logs).
-
-3. **Specialized Index Types (GIN, JSONB, tsvector)**:
-   - **Full-Text Search**: Always index `tsvector` columns (like `search_vector`) using a GIN index: `@@index([searchVector], type: Gin)`. Without this, text search performs a full table scan.
-   - **Fuzzy Search (pg_trgm)**: For typo-tolerant searches (e.g., `products.name`, `sellers.storeName`), use the `pg_trgm` extension. Ensure `postgresqlExtensions` is in `previewFeatures` and add the index using raw operators: `@@index([name(ops: raw("gin_trgm_ops"))], type: Gin)`.
-   - **JSONB Attribute Filtering**: If JSONB columns (like `attributes`) are used for filtering (e.g., via containment `@>` operators), always index them with `jsonb_path_ops` because it is significantly smaller and faster than the default `jsonb_ops`. Add it using: `@@index([attributes(ops: raw("jsonb_path_ops"))], type: Gin)`.
-
-## Next.js Version Convention
-- The project is using **Next.js 16.2.6** (as specified in `apps/web/package.json`).
-- Because it is built on Next.js 15+ features, it uses the Next.js 15+ asynchronous `params` and `searchParams` API (e.g. `const { requestNumber } = await params;`).
-- When mentioning or resolving bugs related to these APIs, note that the project explicitly runs Next.js 16.2.6, which inherits these Next 15 breaking changes.
-
-### Razorpay Integration Guidelines
-1. **Subscription Signature Verification:** When verifying Razorpay Checkout signatures for subscriptions, the HMAC payload string MUST ALWAYS be ordered as `payment_id + "|" + subscription_id`. Do not use the standard order.
-2. **Auto-Healing Test Data:** When retrieving a stored Razorpay ID (e.g., `sub_xxxx`) to pass to the client, first verify it exists via Razorpay's `GET` API. If it returns 404 or a dead status, auto-heal by generating a fresh ID. This prevents "The id provided does not exist" checkout crashes when test environments reset.
-
-## Mobile App Structure & UI Requirements
-- **Domain Boundaries**: Keep tab content strictly relevant to the tab's domain. For example, B2B tabs must only contain B2B Enquiries and B2B Orders. Subscriptions belong in Profile/Account. Returns belong in Orders. Reviews, Coupons, and Deals belong in Sales or Products. Do not group unrelated features.
-- **Image Rendering**: Always use `expo-image` or `react-native` `<Image>` components to render user-uploaded assets (like logos and banners) instead of relying on text initials or "Ready" placeholders. Always construct the full URL using the API's base URL and the asset key.
-- **Professional Aesthetics**: Mobile UI screens must prioritize a modern, professional aesthetic with appropriate spacing, modern shadows, and premium card layouts, avoiding basic or "minimum viable" styles.
-
-
-## Delivery Partner Payout Strategy
-- 1HandIndia uses a static, predictable delivery payout model (Base Pay + Per KM with a minimum floor).
-- Do not build dynamic surge pricing, milestone gamification, or weather-based incentives unless explicitly requested, to keep early operations simple and predictable for early riders.
-
-## Worker/API Boundary
-- The `apps/worker` application is a standard Node.js polling application, not a NestJS app, and does not have access to `@nestjs/schedule` or `apps/api` DI providers. 
-- For simple database updates, the worker should use the shared `@indihub/database` Prisma client directly.
-- For complex, domain-heavy operations (e.g., geospatial queries, assignments, extensive state-machines), DO NOT duplicate API service logic into the worker. Instead, create an `@Controller("internal/...")` endpoint in `apps/api`, secure it with an internal secret header, and have the worker trigger it via `fetch`.
-
-- **Enforce Physical Origins**: Never assume a seller has a valid origin address. Any code allowing sellers to add products, accept orders, or initiate shipments MUST first enforce that the seller has at least one address with saved GPS coordinates (`latitude` and `longitude`). The root cause of delivery routing failures is missing origin data, so we must hard-block operations rather than falling back to arbitrary "base" distances.
-- **Strict Financial Assertions**: When validating incoming financial data from external parties (like Delivery Partners submitting collected COD cash), never allow "greater than zero" checks. The incoming amount MUST be mathematically asserted against the expected `amountPaise` using strict equality (`===`), rejecting any partial submissions entirely.
-
-- **Weight-Based Delivery Boundaries**: When handling large or heavy orders, the system must restrict delivery assignment upfront during checkout, rather than relying on partner rejections. 
-  - `Product` models must include a `weightKg` field.
-  - `ShippingRateCard` must include a `maxWeightKg` config.
-  - The Checkout Pricing Service must sum the cart's total weight. If the total exceeds a rate card's `maxWeightKg`, that specific delivery mode (e.g., Local Delivery) must be strictly filtered out of the checkout options, forcing the customer to select Manual Transport or a heavy Courier.
-  - **Migration**: Existing products without a saved weight should safely default to `0kg` to avoid breaking checkout until sellers update their inventory.
-
-## E-Commerce Checkout Performance & UX
-- **Single-Pass Routing:** When evaluating multiple shipping or delivery permutations (e.g., pricing all 4 delivery modes at once), NEVER fan-out concurrent routing calls via `Promise.all` if they share underlying location, proximity, or courier database queries. Always implement single-pass batch evaluators (e.g., `resolveAllDeliveryOptions`) to prevent database spikes during frequent cart updates.
-- **Transparent Disabled States:** When an explicit user choice (like a delivery mode or payment method) is restricted by business rules (pincode coverage, weight limit, basket size), prefer rendering the option as disabled/greyed-out with a clear reason (e.g., "Exceeds 5kg limit") rather than silently filtering it out. Silent omission leads to customer confusion and support tickets.
-
-## Delivery Routing & Checkout Architecture
-- **Single-Pass Routing**: When calculating `availableDeliveryOptions` for checkout pricing, always evaluate the delivery routing quotes in a single pass across the cart. Avoid calculating 4 independent `resolveDelivery` calls for every UI state update to prevent backend rate limiting and DB transaction spikes.
-- **Explicit Unavailable States**: When a delivery mode (e.g., Local Delivery) fails routing criteria (like `maxWeightKg` limits or missing local partners), do not silently remove the option from the frontend. Expose the disabled option with `available: false` and a `reason` (e.g., "Wholesale bulky package") so the customer understands why it is unavailable.
-- **Type-Safe DTO Propagations**: When adding new fields like `maxWeightKg` to the DB schema, ensure they are explicitly queried in the `Prisma.select` objects (e.g., inside `checkoutSummaryItems`) before attempting to pass them to pricing services, to avoid silent TypeScript `any` widening or `undefined` runtime bugs.
-- **API Payload Hygiene**: Never expose internal backend diagnostic objects, `snapshot` fields, or complex routing/audit traces in public customer-facing API responses (e.g., storefront endpoints). These objects should only be stored in the database or exposed to authenticated admin APIs. Always trim public API responses to exactly what the frontend UI needs to render.
-- **Domain-Strict Querying**: When building operational queries for distinct domains (e.g., Local Delivery vs Third-Party Courier), NEVER rely solely on status fields (like `UNASSIGNED` or `PACKED`) to filter records. Always explicitly scope the query using the domain discriminator (e.g., `deliveryMode: LOCAL_DELIVERY_PARTNER`), ensuring records from one domain do not leak into another domain's workspace.
-- **Automated Financial Reconciliation (Zero-Touch Admin)**: For high-volume financial handovers (like COD collections), NEVER design manual admin verification flows (e.g., uploading screenshots for approval). Always design zero-touch automated pipelines using Virtual Accounts (e.g., Razorpay Smart Collect) and webhooks with FIFO auto-reconciliation to eliminate operational bottlenecks.
-
-
-
-- **Financial Limit & Exposure Evaluation**: When evaluating user financial limits (e.g., COD Exposure limits, Credit limits), NEVER compare a static or lifetime "Gross Amount" against the limit. You MUST calculate the **Net Projected Exposure** inside a transactional row-lock (`SELECT ... FOR UPDATE`).
-  - **Net Projected Exposure** = `(Unsettled Gross Value) + (Assigned/Pending Future Liabilities) - (Prepaid/Deposit Wallet Balances)`
-  - Always project the exposure by adding the value of the *new assignment* currently being evaluated.
-  - Negative net exposures (deposits > liabilities) are mathematically valid and act as safe headroom. Do not artificially floor them to `0` during calculations.
-  - Never allow separate withdrawal flows for prepaid/offset wallets without enforcing the exact same Net Projected Exposure limit check to prevent exploit withdrawals.
-
-- **Financial Formula Transparency**: When explaining financial reports, wallet balances, or payout calculations to the user, always provide the exact mathematical formula used in the code. Map backend variable names (e.g., `netPayablePaise`) to their UI labels (e.g., "Net payable") so the user can verify calculations against what they see on screen. Do not summarise without the formula.
-
-- **Finance Report Derivation**: When building seller finance report summaries (tax report, finance report, sales overview), NEVER read `netPayablePaise` directly from `_sum.netPayablePaise` DB aggregates, as these are stale stamped values. Always re-derive it from effective components: `netPayablePaise = grossSales - commission - gstOnCommission - tds - tcs - platformFee - couponSellerFundedDiscount + couponAdjustment + refundAdjustment`. This matches `FinanceCalculatorService.calculateSplit()` exactly.
-
-- **Date Filter UTC Conversion**: When any seller or finance API `queryString()` helper receives `dateFrom` or `dateTo` as exactly 10-character `YYYY-MM-DD` strings, always convert to local-timezone ISO: `dateFrom` → midnight local (`T00:00:00.000`), `dateTo` → end-of-day local (`T23:59:59.999`), then call `.toISOString()` to produce correct UTC bounds. This is already applied to all 14 seller/finance API client files — do not revert to raw date string passing.
-
-- **Efficient Command Execution**: On Windows PowerShell, chain dependent commands with `; if ($LASTEXITCODE -eq 0) { next_command } else { exit 1 }` — never use `&&` (not valid in PowerShell). Batch typecheck, tests, and lint into a single pipeline. Only run verification once per logical unit of completed work. Do not run commands speculatively.
-
-- **Mobile Banner UI/UX (Glassmorphism & Carousels)**: When implementing or updating Announcement Banners or CMS Carousels in the mobile applications:
-  - Do not use right-side or left-side arrow icons for navigation.
-  - Implement an auto-slide/carousel effect that transitions every 3 seconds if multiple items exist.
-  - Always implement a premium glassmorphism effect. If rendering backend-provided background colors (especially dark colors), use a semi-transparent opacity (e.g., `rgba(..., 0.8)`) overlay or native blur view to ensure the banner perfectly matches the glassy effect of the app, rather than rendering flat opaque colors.
+- Request satisfied within minimal scope; no unrelated changes.
+- Relevant gates (section 4, step 6) run and passing, or failures reported plainly.
+- No secrets printed, no writes to the staging DB without approval.
+- If the change alters what exists or how it was verified, add a short dated entry to `docs/STATUS.md` (not to this file).

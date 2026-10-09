@@ -35,6 +35,7 @@ import {
   variantBaseOriginalPrice,
   variantBasePrice,
   type ProductSummary,
+  type StoreProfile,
 } from "@/lib/storefront-api";
 import { listPublicServices, type ServiceListing } from "@/lib/service-marketplace-api";
 import { StorefrontFrame } from "./storefront-frame";
@@ -52,7 +53,13 @@ import { useStorefrontWishlist } from "./use-storefront-wishlist";
 const brandLogoSrc = "/brand/1handindia_logo.webp";
 const vendorHeroVisualSrc = "/brand/vendor-page-logo.webp";
 
-export function StoreProfileClient({ slug }: { slug: string }) {
+export function StoreProfileClient({
+  slug,
+  initialStore,
+}: {
+  slug: string;
+  initialStore?: StoreProfile | null;
+}) {
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
   const wishlist = useStorefrontWishlist();
@@ -61,6 +68,7 @@ export function StoreProfileClient({ slug }: { slug: string }) {
   const storeQuery = useQuery({
     queryKey: ["store-profile", slug],
     queryFn: () => getStoreProfile(slug),
+    initialData: initialStore ?? undefined,
     retry: false,
   });
   const productsQuery = useQuery({

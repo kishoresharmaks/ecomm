@@ -8,11 +8,19 @@ type CategoryProductsPageProps = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: CategoryProductsPageProps): Promise<Metadata> {
   const { slug } = await params;
   const { category, seo } = await categorySeoData(slug);
+  if (!category) {
+    return {
+      title: "Category Not Found | 1HandIndia",
+      description: "The requested category is not available on 1HandIndia.",
+      robots: { index: false, follow: false },
+    };
+  }
+
   return metadataFromSeo(seo, {
-    title: category ? `${category.name} Products` : "Category Products",
-    description: category?.description ?? "Browse category products from verified sellers and hyperlocal stores on 1HandIndia.",
+    title: `${category.name} Products | 1HandIndia`,
+    description: category.description || `Browse quality ${category.name} from verified Indian merchants and sellers on 1HandIndia.`,
     path: `/categories/${slug}`,
-    imageUrl: category?.imageUrl
+    imageUrl: category.imageUrl
   });
 }
 

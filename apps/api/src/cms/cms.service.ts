@@ -54,14 +54,22 @@ const PRIVATE_SITEMAP_EXCLUSIONS = [
 ];
 
 const STATIC_SITEMAP_ENTRIES = [
-  { path: "/", changeFrequency: "daily", priority: 1, source: "homepage" },
-  { path: "/categories", changeFrequency: "daily", priority: 0.8, source: "categories" },
-  { path: "/deals", changeFrequency: "daily", priority: 0.75, source: "deals" },
-  { path: "/stores", changeFrequency: "daily", priority: 0.8, source: "stores" },
-  { path: "/about", changeFrequency: "monthly", priority: 0.45, source: "about" },
-  { path: "/contact", changeFrequency: "monthly", priority: 0.55, source: "support_landing" },
-  { path: "/seller/register", changeFrequency: "weekly", priority: 0.65, source: "seller_landing" },
-  { path: "/b2b/register", changeFrequency: "weekly", priority: 0.65, source: "b2b_landing" }
+  { path: "/", changeFrequency: "daily", priority: 1.0, source: "homepage" },
+  { path: "/stores", changeFrequency: "daily", priority: 0.9, source: "stores" },
+  { path: "/categories", changeFrequency: "daily", priority: 0.9, source: "categories" },
+  { path: "/deals", changeFrequency: "daily", priority: 0.85, source: "deals" },
+  { path: "/seller", changeFrequency: "weekly", priority: 0.75, source: "seller_landing" },
+  { path: "/seller/register", changeFrequency: "weekly", priority: 0.7, source: "seller_register" },
+  { path: "/b2b", changeFrequency: "weekly", priority: 0.75, source: "b2b_landing" },
+  { path: "/b2b/register", changeFrequency: "weekly", priority: 0.7, source: "b2b_register" },
+  { path: "/about", changeFrequency: "monthly", priority: 0.5, source: "about" },
+  { path: "/contact", changeFrequency: "monthly", priority: 0.6, source: "support_landing" },
+  { path: "/privacy-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/account-deletion", changeFrequency: "monthly", priority: 0.3, source: "policy" },
+  { path: "/refund-return-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/seller-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/shipping-policy", changeFrequency: "monthly", priority: 0.4, source: "policy" },
+  { path: "/terms-and-conditions", changeFrequency: "monthly", priority: 0.4, source: "policy" }
 ] as const;
 
 function homepageSectionScheduleIsLive(section: HomepageSectionScheduleRecord, now = new Date()) {

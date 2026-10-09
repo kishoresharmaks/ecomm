@@ -9,11 +9,19 @@ type ProductDetailPageProps = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: ProductDetailPageProps): Promise<Metadata> {
   const { slug } = await params;
   const { product, seo } = await productSeoData(slug);
+  if (!product) {
+    return {
+      title: "Product Not Found | 1HandIndia",
+      description: "The requested product is not available on 1HandIndia.",
+      robots: { index: false, follow: false },
+    };
+  }
+
   return metadataFromSeo(seo, {
-    title: product ? productSeoFallbackTitle(product) : "Product Details",
-    description: product ? productSeoFallbackDescription(product) : "View product price, availability, seller information, and delivery options on 1HandIndia.",
+    title: productSeoFallbackTitle(product),
+    description: productSeoFallbackDescription(product),
     path: `/products/${slug}`,
-    imageUrl: product ? primaryImage(product) : undefined
+    imageUrl: primaryImage(product)
   });
 }
 
@@ -35,7 +43,7 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
           ]}
         />
       ) : null}
-      <ProductDetailClient slug={slug} />
+      <ProductDetailClient slug={slug} initialProduct={product} />
     </>
   );
 }

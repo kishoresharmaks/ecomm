@@ -65,7 +65,13 @@ import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
 const directCheckoutStorageKey = "indihub.directCheckout.v1";
 
-export function ProductDetailClient({ slug }: { slug: string }) {
+export function ProductDetailClient({
+  slug,
+  initialProduct,
+}: {
+  slug: string;
+  initialProduct?: ProductSummary | null;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
@@ -81,6 +87,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const productQuery = useQuery({
     queryKey: ["product", slug],
     queryFn: () => getProduct(slug),
+    initialData: initialProduct ?? undefined,
   });
   const product = productQuery.data;
   const fallbackVariant = product ? primaryVariant(product) : null;
