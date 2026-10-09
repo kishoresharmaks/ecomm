@@ -31,9 +31,6 @@ export const metadata: Metadata = {
     siteName: brandConfig.name,
     type: "website",
     url: siteUrl
-  },
-  alternates: {
-    canonical: "/"
   }
 };
 
@@ -66,19 +63,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     legalName: "BEES HUB FARMLAND PRIVATE LIMITED"
   };
 
-  const socialProfileJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "SocialMediaPosting",
-    url: `${siteUrl}/`,
-    headline: brandConfig.name,
-    about: brandConfig.tagline,
-    sameAs: [
-      "https://www.facebook.com/1handindia",
-      "https://www.instagram.com/1handindia/",
-      "https://www.youtube.com/channel/UCK1w6LlYqW666P5E_ZrPeoA"
-    ]
-  };
-
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <head>
@@ -97,11 +81,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           type="application/ld+json"
           nonce={nonce}
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
-        />
-        <script
-          type="application/ld+json"
-          nonce={nonce}
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(socialProfileJsonLd) }}
         />
       </head>
       <body>

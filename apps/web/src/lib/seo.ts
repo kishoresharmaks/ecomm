@@ -415,7 +415,7 @@ export function buildStoreJsonLd(store: StoreProfile) {
 
   return {
     "@context": "https://schema.org",
-    "@type": ["Store", "LocalBusiness", "OnlineStore"],
+    "@type": "Store",
     "@id": absoluteUrl(`/stores/${store.slug}#store`),
     name: store.storeName,
     url: absoluteUrl(`/stores/${store.slug}`),
